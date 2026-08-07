@@ -1,0 +1,34 @@
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  place-content: center;
+  place-items: center;
+  flex-grow: 1;
+  min-height: 100vh;
+  text-align: center;
+}
+
+.status-badge {
+  font-size: 18px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+}
+
+.status-checking {
+  background: #f0f0f0;
+  color: #555;
+}
+
+.status-connected {
+  background: #e6f7e9;
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.status-error {
+  background: #fdecec;
+  color: #c0392b;
+  border-color: #c0392b;
+}

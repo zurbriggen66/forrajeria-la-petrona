@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(../backend_venv/Scripts/python.exe manage.py makemigrations ventas)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py migrate)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py migrate ventas)",
+      "Bash(curl -s -o /dev/null -w \"django=%{http_code}\\\\n\" http://127.0.0.1:8000/api/schema/)",
+      "Bash(curl -s -o /dev/null -w \"vite=%{http_code}\\\\n\" http://127.0.0.1:5173/)",
+      "Bash(nohup ../backend_venv/Scripts/python.exe manage.py runserver 127.0.0.1:8000)",
+      "Bash(disown)",
+      "Bash(nohup npm run dev -- --host 127.0.0.1 --port 5173)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py check)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test ventas -v 2)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(node shot_pos.js)",
+      "Bash(npm init *)",
+      "Bash(npx playwright *)",
+      "Bash(node -e \"const {chromium} = require\\('playwright'\\); console.log\\('ok', typeof chromium.launch\\)\")",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+/*
+  Identidad TIENDA-IA — tema oscuro "dashboard IA": violeta eléctrico + cian,
+  fondo casi negro con tinte frío, tarjetas con glow sutil.
+*/
+@theme {
+  --color-bg: #09090f;
+  --color-surface: #121220;
+  --color-surface-2: #1b1b2e;
+  --color-border: #28283f;
+  --color-accent: #7c5cff;
+  --color-accent-2: #22d3ee;
+  --color-warning: #f5a524;
+  --color-danger: #f43f5e;
+  --color-text: #eef0f7;
+  --color-text-dim: #9293ab;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.text-gradient-brand {
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-gradient-brand {
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent-2));
+}
+
+.glow-accent {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, var(--color-border)),
+    0 12px 32px -12px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ambient-blob {
+    animation: ambient-drift 16s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes ambient-drift {
+  from { transform: translate(-4%, -2%) scale(1); }
+  to { transform: translate(4%, 3%) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

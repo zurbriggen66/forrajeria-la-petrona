@@ -23,9 +23,22 @@ class CajaSesion(TenantModel):
     fecha_apertura = models.DateTimeField(auto_now_add=True)
     fecha_cierre = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comercio"],
+                condition=models.Q(estado="abierta"),
+                name="unique_caja_sesion_abierta_por_comercio",
+            )
+        ]
+
 
 class CajaMovimiento(TenantModel):
     sesion = models.ForeignKey(CajaSesion, on_delete=models.CASCADE, null=True, blank=True)
+    cuenta = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
     tipo = models.CharField(max_length=20)  # ingreso | egreso
     concepto = models.CharField(max_length=200, blank=True)
     monto = models.DecimalField(max_digits=14, decimal_places=2)
+    # Comparte el mismo UUID en las dos patas (egreso + ingreso) de una transferencia
+    # entre contenedores, para poder mostrarlas agrupadas en el frontend.
+    transferencia_id = models.UUIDField(null=True, blank=True)

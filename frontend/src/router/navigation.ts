@@ -48,6 +48,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: 'Estadísticas', path: '/estadisticas', icon: BarChart3,
     children: [
+      { label: 'Panel', path: '/estadisticas/panel' },
       { label: 'Rankings', path: '/estadisticas/rankings' },
       { label: 'Rentabilidad', path: '/estadisticas/rentabilidad' },
       { label: 'Mapa Neural', path: '/estadisticas/mapa-neural' },
@@ -58,13 +59,26 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'CRM', path: '/crm', icon: Users },
   { label: 'Facturación', path: '/facturacion', icon: Receipt },
   { label: 'Baldes', path: '/baldes', icon: IceCreamCone },
-  { label: 'Finanzas', path: '/finanzas', icon: Wallet },
+  {
+    label: 'Finanzas', path: '/finanzas', icon: Wallet,
+    children: [
+      { label: 'Gastos', path: '/finanzas/gastos' },
+    ],
+  },
   { label: 'Admin', path: '/admin', icon: Shield },
   { label: 'Empleados', path: '/empleados', icon: UserCog },
   { label: 'Proveedores', path: '/proveedores', icon: Truck },
   { label: 'Pedidos', path: '/pedidos', icon: PackageSearch },
   { label: 'Compras', path: '/compras', icon: ShoppingBag },
-  { label: 'Caja', path: '/caja', icon: Wallet },
+  {
+    label: 'Caja', path: '/caja', icon: Wallet,
+    children: [
+      { label: 'Contenedores', path: '/caja/contenedores' },
+      { label: 'Movimientos', path: '/caja/movimientos' },
+      { label: 'Cuentas y Cajas', path: '/caja/cuentas-cajas' },
+      { label: 'Historial sesiones', path: '/caja/historial' },
+    ],
+  },
   { label: 'Clientes', path: '/clientes', icon: UserRound },
   { label: 'Config', path: '/config', icon: Settings },
 ]

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Wifi, WifiOff } from 'lucide-react'
 import { FLAT_ROUTES, NAV_ITEMS } from '../router/navigation'
 import { useAuth } from '../context/AuthContext'
+import { useCajaActual } from '../modules/caja/api'
 
 export function Statusbar() {
   const location = useLocation()
   const { user, comercio } = useAuth()
+  const { data: cajaActual } = useCajaActual()
   const [online, setOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -28,10 +30,15 @@ export function Statusbar() {
     <footer className="flex items-center justify-between border-t border-border bg-surface px-6 py-2 text-xs text-text-dim">
       <div className="flex items-center gap-4">
         <span>{current?.label ?? '—'}</span>
-        <span className="flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-text-dim" />
-          CAJA CERRADA
-        </span>
+        <Link
+          to={cajaActual ? '/caja/contenedores' : '/caja/movimientos'}
+          className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 transition-colors ${
+            cajaActual ? 'border-accent-2/40 text-accent-2' : 'border-border hover:border-warning/40 hover:text-warning'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${cajaActual ? 'bg-accent-2' : 'bg-text-dim'}`} />
+          {cajaActual ? 'CAJA ABIERTA' : 'CAJA CERRADA'}
+        </Link>
       </div>
       <div className="flex items-center gap-4">
         {comercio && <span>{comercio.nombre}</span>}

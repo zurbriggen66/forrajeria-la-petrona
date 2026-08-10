@@ -24,3 +24,12 @@ class PerfilMeSerializer(serializers.ModelSerializer):
 
         relaciones = UsuarioComercio.objects.filter(user=perfil.user).select_related("comercio")
         return ComercioSerializer([r.comercio for r in relaciones], many=True).data
+
+
+class PerfilVendedorSerializer(serializers.ModelSerializer):
+    """Listado liviano de perfiles del comercio, para selects de "vendedor"
+    en filtros (Historial de ventas, Estadísticas)."""
+
+    class Meta:
+        model = Perfil
+        fields = ["id", "nombre_completo", "rol"]

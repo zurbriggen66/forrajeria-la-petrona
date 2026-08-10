@@ -51,13 +51,25 @@ class VentaItemSerializer(serializers.ModelSerializer):
 class VentaSerializer(serializers.ModelSerializer):
     items = VentaItemSerializer(many=True, read_only=True)
     cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True, default=None)
+    vendedor_nombre = serializers.CharField(source="vendedor.nombre_completo", read_only=True, default=None)
+    cuenta_pago_nombre = serializers.CharField(source="cuenta_pago.nombre", read_only=True, default=None)
 
     class Meta:
         model = Venta
         fields = [
-            "id", "numero_ticket", "sync_uuid", "cliente", "cliente_nombre", "cuenta_pago",
+            "id", "numero_ticket", "sync_uuid", "vendedor", "vendedor_nombre",
+            "cliente", "cliente_nombre", "cuenta_pago", "cuenta_pago_nombre",
             "total", "descuento", "recargo_monto", "metodo_pago",
             "monto_efectivo", "monto_tarjeta", "monto_transferencia",
             "efectivo_recibido", "vuelto", "origen",
-            "anulada", "motivo_anulacion", "created_at", "items",
+            "anulada", "motivo_anulacion", "fecha_anulacion", "created_at", "items",
         ]
+
+
+class VentaAnularSerializer(serializers.Serializer):
+    motivo = serializers.CharField(max_length=300, allow_blank=False, trim_whitespace=True)
+
+    def validate_motivo(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("El motivo de anulación es obligatorio.")
+        return value

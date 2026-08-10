@@ -11,9 +11,10 @@ interface TableProps<T> {
   rows: T[]
   rowKey: (row: T) => string
   emptyMessage?: string
+  onRowClick?: (row: T) => void
 }
 
-export function Table<T>({ columns, rows, rowKey, emptyMessage = 'Sin resultados.' }: TableProps<T>) {
+export function Table<T>({ columns, rows, rowKey, emptyMessage = 'Sin resultados.', onRowClick }: TableProps<T>) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-surface">
       <table className="w-full text-left text-sm">
@@ -38,7 +39,11 @@ export function Table<T>({ columns, rows, rowKey, emptyMessage = 'Sin resultados
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={rowKey(row)} className="border-b border-border last:border-0 hover:bg-surface-2">
+              <tr
+                key={rowKey(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={`border-b border-border last:border-0 hover:bg-surface-2 ${onRowClick ? 'cursor-pointer' : ''}`}
+              >
                 {columns.map((col) => (
                   <td key={col.header} className={`px-4 py-3 text-text ${col.className ?? ''}`}>
                     {col.render(row)}

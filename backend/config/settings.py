@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "proveedores",
     "compras",
     "finanzas",
+    "estadisticas",
     "fiscal",
     "admin_saas",
     "telemetria",

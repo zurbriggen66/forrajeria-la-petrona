@@ -3,13 +3,15 @@ Flujos críticos del POS (Fase 2): venta completa de punta a punta, stock,
 idempotencia de la cola offline, aislamiento multi-tenant y fidelización.
 """
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework import status
 
-from caja.models import CuentaPago
+from caja.models import CajaMovimiento, CajaSesion, CuentaPago
 from clientes.models import Cliente
 from core.models import Comercio, UsuarioComercio
 from kubobots.models import KubobotsCliente
@@ -25,6 +27,8 @@ class VentaCompletaTests(APITestCase):
         self.user = User.objects.create_user(username="cajero", password="testpass123")
         UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
         self.client.force_authenticate(user=self.user)
+        # Desde la Fase 3 toda venta requiere una caja abierta (ver caja/tests.py).
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
 
         self.gaseosa = Producto.objects.create(
             comercio=self.comercio, nombre="Gaseosa", precio_costo=Decimal("100"),
@@ -154,3 +158,112 @@ class VentaCompletaTests(APITestCase):
             cliente=str(cliente.id),
         ), format="json")
         self.assertFalse(KubobotsCliente.objects.filter(comercio=self.comercio, cliente=cliente).exists())
+
+
+class VentaAnulacionYFiltrosTests(APITestCase):
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.gaseosa = Producto.objects.create(
+            comercio=self.comercio, nombre="Gaseosa", categoria="Bebidas",
+            precio_costo=Decimal("100"), precio_venta=Decimal("200"), stock=Decimal("50"),
+        )
+
+    def _vender(self, cantidad="2"):
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": cantidad}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return response.data
+
+    def test_anular_repone_stock_y_no_borra_la_venta(self):
+        venta = self._vender("3")
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("47.000"))
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Cliente se arrepintió"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["anulada"])
+        self.assertEqual(response.data["motivo_anulacion"], "Cliente se arrepintió")
+
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("50.000"), "debe reponer el stock vendido")
+        self.assertTrue(Venta.objects.filter(id=venta["id"]).exists(), "la venta nunca se borra, sólo se anula")
+
+    def test_anular_genera_egreso_compensatorio_si_la_caja_sigue_abierta(self):
+        venta = self._vender("1")
+        self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Error de carga"}, format="json")
+
+        egreso = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="egreso")
+        self.assertEqual(egreso.monto, Decimal("200.00"))
+
+    def test_anular_no_infla_los_kpi_de_ventas_efectivo_y_retiros_de_caja(self):
+        venta = self._vender("1")
+        self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Error de carga"}, format="json")
+
+        actual = self.client.get("/api/caja/sesiones/actual/")
+        self.assertEqual(
+            Decimal(actual.data["retiros"]), Decimal("0.00"),
+            "el egreso compensatorio de una anulación no es un retiro real de efectivo",
+        )
+        self.assertEqual(
+            Decimal(actual.data["ventas_efectivo"]), Decimal("0.00"),
+            "una venta anulada no cuenta como venta real del turno",
+        )
+        efectivo = next(c for c in actual.data["contenedores"] if c["nombre"] == "Efectivo")
+        self.assertEqual(
+            Decimal(efectivo["saldo_turno"]), self.caja_sesion.monto_apertura,
+            "el saldo del contenedor sí tiene que netear ingreso y egreso para cerrar bien al arquear",
+        )
+
+    def test_anular_no_toca_una_sesion_de_caja_ya_cerrada(self):
+        venta = self._vender("1")
+        self.client.post(f"/api/caja/sesiones/{self.caja_sesion.id}/cerrar/", {"monto_cierre": "200"}, format="json")
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Post-cierre"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="egreso").exists())
+
+    def test_no_se_puede_anular_dos_veces(self):
+        venta = self._vender("1")
+        self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Primera"}, format="json")
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Segunda"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_anular_requiere_motivo(self):
+        venta = self._vender("1")
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "  "}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_filtro_por_rango_de_fechas(self):
+        self._vender("1")
+        hoy = timezone.now().date().isoformat()
+        maniana = (timezone.now().date() + timedelta(days=1)).isoformat()
+        ayer = (timezone.now().date() - timedelta(days=1)).isoformat()
+
+        dentro = self.client.get(f"/api/ventas/?fecha_desde={hoy}&fecha_hasta={maniana}")
+        fuera = self.client.get(f"/api/ventas/?fecha_desde={ayer}&fecha_hasta={ayer}")
+        self.assertEqual(dentro.data["count"], 1)
+        self.assertEqual(fuera.data["count"], 0)
+
+    def test_filtro_por_categoria_de_producto(self):
+        self._vender("1")
+        con_categoria = self.client.get("/api/ventas/?categoria=Bebidas")
+        sin_categoria = self.client.get("/api/ventas/?categoria=Lacteos")
+        self.assertEqual(con_categoria.data["count"], 1)
+        self.assertEqual(sin_categoria.data["count"], 0)
+
+    def test_filtro_por_anulada(self):
+        venta = self._vender("1")
+        self._vender("1")
+        self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "x"}, format="json")
+
+        anuladas = self.client.get("/api/ventas/?anulada=true")
+        activas = self.client.get("/api/ventas/?anulada=false")
+        self.assertEqual(anuladas.data["count"], 1)
+        self.assertEqual(activas.data["count"], 1)

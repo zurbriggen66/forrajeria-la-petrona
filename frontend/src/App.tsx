@@ -14,8 +14,19 @@ import { Historial } from './modules/productos/Historial'
 import { EstadoInventario } from './modules/inventario/EstadoInventario'
 import { RankingRentabilidad } from './modules/inventario/RankingRentabilidad'
 import { PosPage } from './modules/pos/PosPage'
+import { ControlCaja } from './modules/caja/ControlCaja'
+import { Movimientos } from './modules/caja/Movimientos'
+import { CuentasYCajas } from './modules/caja/CuentasYCajas'
+import { HistorialSesiones } from './modules/caja/HistorialSesiones'
+import { Gastos } from './modules/finanzas/Gastos'
+import { HistorialVentas } from './modules/ventas/HistorialVentas'
+import { Tickets } from './modules/ventas/Tickets'
+import { Panel } from './modules/estadisticas/Panel'
+import { Rankings } from './modules/estadisticas/Rankings'
+import { Rentabilidad } from './modules/estadisticas/Rentabilidad'
+import { VerdadDelNegocio } from './modules/estadisticas/VerdadDelNegocio'
 
-// Módulos ya implementados (ROADMAP Fases 1 y 2). El resto sigue como
+// Módulos ya implementados (ROADMAP Fases 1 a 4). El resto sigue como
 // placeholder hasta que le toque su fase.
 const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/pos': PosPage,
@@ -25,6 +36,17 @@ const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/productos/historial': Historial,
   '/inventario/stock': EstadoInventario,
   '/inventario/ranking': RankingRentabilidad,
+  '/caja/contenedores': ControlCaja,
+  '/caja/movimientos': Movimientos,
+  '/caja/cuentas-cajas': CuentasYCajas,
+  '/caja/historial': HistorialSesiones,
+  '/finanzas/gastos': Gastos,
+  '/ventas/historial': HistorialVentas,
+  '/ventas/tickets': Tickets,
+  '/estadisticas/panel': Panel,
+  '/estadisticas/rankings': Rankings,
+  '/estadisticas/rentabilidad': Rentabilidad,
+  '/verdad-del-negocio': VerdadDelNegocio,
 }
 
 function App() {

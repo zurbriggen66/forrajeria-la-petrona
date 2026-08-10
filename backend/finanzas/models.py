@@ -1,9 +1,12 @@
 from django.db import models
 from core.models import BaseModel, TenantModel, Perfil
 from productos.models import Producto
+from caja.models import CajaSesion, CuentaPago
 
 
 class Gasto(TenantModel):
+    caja_sesion = models.ForeignKey(CajaSesion, on_delete=models.SET_NULL, null=True, blank=True)
+    cuenta = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
     categoria = models.CharField(max_length=120, blank=True)
     descripcion = models.CharField(max_length=300, blank=True)
     monto = models.DecimalField(max_digits=14, decimal_places=2, default=0)

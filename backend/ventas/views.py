@@ -2,11 +2,14 @@ from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import Max
+from django.utils import timezone
 from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from caja.models import CuentaPago
+from caja.models import CajaMovimiento, CajaSesion, CuentaPago
+from caja.views import resolver_cuenta_efectivo
 from clientes.models import Cliente
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
@@ -14,19 +17,37 @@ from kubobots.models import KubobotsCliente
 from productos.models import Producto
 
 from .models import Venta, VentaItem
-from .serializers import VentaCreateSerializer, VentaSerializer
+from .serializers import VentaAnularSerializer, VentaCreateSerializer, VentaSerializer
 
 
 class VentaViewSet(TenantViewSet):
-    """Registrar ventas desde el POS (Fase 2). Historial/filtros completos
-    llegan en la Fase 4; acá alcanza con crear y poder recuperar el ticket."""
+    """Registrar ventas desde el POS (Fase 2) e historial/anulación (Fase 4)."""
 
     queryset = Venta.objects.all().prefetch_related("items").order_by("-created_at")
+    filterset_fields = ["vendedor", "cliente", "cuenta_pago", "metodo_pago", "anulada", "numero_ticket"]
 
     def get_serializer_class(self):
         if self.action == "create":
             return VentaCreateSerializer
+        if self.action == "anular":
+            return VentaAnularSerializer
         return VentaSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        fecha_desde = self.request.query_params.get("fecha_desde")
+        fecha_hasta = self.request.query_params.get("fecha_hasta")
+        if fecha_desde:
+            qs = qs.filter(created_at__date__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(created_at__date__lte=fecha_hasta)
+        categoria = self.request.query_params.get("categoria")
+        if categoria:
+            qs = qs.filter(items__producto__categoria=categoria).distinct()
+        proveedor = self.request.query_params.get("proveedor")
+        if proveedor:
+            qs = qs.filter(items__producto__proveedor_id=proveedor).distinct()
+        return qs
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -49,8 +70,53 @@ class VentaViewSet(TenantViewSet):
             raise
         return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"])
+    def anular(self, request, pk=None):
+        comercio = resolver_comercio_activo(request)
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related("caja_sesion").first()
+        if venta is None:
+            raise ValidationError("La venta no existe.")
+        if venta.anulada:
+            raise ValidationError("La venta ya está anulada.")
+
+        serializer = VentaAnularSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            productos_a_actualizar = []
+            for item in venta.items.filter(producto__isnull=False).select_related("producto"):
+                producto = Producto.objects.select_for_update().get(pk=item.producto_id)
+                producto.stock = producto.stock + item.cantidad
+                productos_a_actualizar.append(producto)
+            Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
+
+            venta.anulada = True
+            venta.motivo_anulacion = serializer.validated_data["motivo"]
+            venta.fecha_anulacion = timezone.now()
+            venta.save(update_fields=["anulada", "motivo_anulacion", "fecha_anulacion", "updated_at"])
+
+            # Sólo se corrige el arqueo si la caja de esa venta sigue abierta:
+            # una sesión ya cerrada no se retoca, queda como quedó reportada.
+            if venta.caja_sesion_id and venta.caja_sesion.estado == "abierta":
+                CajaMovimiento.objects.create(
+                    comercio=comercio,
+                    sesion=venta.caja_sesion,
+                    cuenta=venta.cuenta_pago or resolver_cuenta_efectivo(comercio),
+                    tipo="egreso",
+                    concepto=f"Anulación venta #{venta.numero_ticket}",
+                    monto=venta.total,
+                )
+
+        return Response(VentaSerializer(venta).data)
+
     def _crear_venta(self, request, comercio, data):
         with transaction.atomic():
+            caja_sesion = CajaSesion.objects.select_for_update().filter(
+                comercio=comercio, estado="abierta"
+            ).first()
+            if caja_sesion is None:
+                raise ValidationError("No hay una caja abierta. Abrí la caja antes de vender.")
+
             producto_ids = [item["producto"] for item in data["items"]]
             productos = {
                 p.id: p
@@ -124,6 +190,7 @@ class VentaViewSet(TenantViewSet):
                 numero_ticket=numero_ticket,
                 vendedor=perfil,
                 cliente=cliente_obj,
+                caja_sesion=caja_sesion,
                 cuenta_pago=cuenta_pago_obj,
                 total=total,
                 descuento=data["descuento"],
@@ -140,6 +207,15 @@ class VentaViewSet(TenantViewSet):
                 item.venta = venta
             VentaItem.objects.bulk_create(items_a_crear)
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
+
+            CajaMovimiento.objects.create(
+                comercio=comercio,
+                sesion=caja_sesion,
+                cuenta=cuenta_pago_obj or resolver_cuenta_efectivo(comercio),
+                tipo="ingreso",
+                concepto=f"Venta #{numero_ticket}",
+                monto=total,
+            )
 
             if (
                 cliente_obj

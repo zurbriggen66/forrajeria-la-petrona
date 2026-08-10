@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import axios from 'axios'
 import { CloudOff, Loader2, RefreshCcw } from 'lucide-react'
 import { useToast } from '../../context/ToastContext'
+import { AbrirCajaForm } from '../caja/AbrirCajaForm'
+import { useCajaActual } from '../caja/api'
 import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
@@ -16,6 +18,9 @@ export function PosPage() {
   const { productos, loading: cargandoCatalogo, desdeCache } = useCatalogoPOS()
   const { online, pendientes, sincronizando } = useOfflineSync()
   const { toast } = useToast()
+  // Sin conexión no podemos confirmar el estado de la caja: no bloqueamos el
+  // POS (offline-first) y confiamos en que el backend valide al sincronizar.
+  const { data: cajaActual, isLoading: cargandoCaja, isError: errorCaja } = useCajaActual()
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [cobrando, setCobrando] = useState(false)
@@ -86,6 +91,22 @@ export function PosPage() {
     } finally {
       setCobrando(false)
     }
+  }
+
+  if (cargandoCaja) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-text-dim">
+        <Loader2 size={16} className="animate-spin" /> Verificando caja…
+      </div>
+    )
+  }
+
+  if (!errorCaja && cajaActual === null) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <AbrirCajaForm subtitle="No podés vender sin una caja abierta. Abrila para empezar a cobrar." />
+      </div>
+    )
   }
 
   return (

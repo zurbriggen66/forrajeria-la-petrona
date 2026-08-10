@@ -13,10 +13,12 @@ import { Aumentos } from './modules/productos/Aumentos'
 import { Historial } from './modules/productos/Historial'
 import { EstadoInventario } from './modules/inventario/EstadoInventario'
 import { RankingRentabilidad } from './modules/inventario/RankingRentabilidad'
+import { PosPage } from './modules/pos/PosPage'
 
-// Módulos ya implementados (ROADMAP Fase 1). El resto sigue como placeholder
-// hasta que le toque su fase.
+// Módulos ya implementados (ROADMAP Fases 1 y 2). El resto sigue como
+// placeholder hasta que le toque su fase.
 const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
+  '/pos': PosPage,
   '/productos/listado': ProductosListado,
   '/productos/combos': Combos,
   '/productos/aumentos': Aumentos,

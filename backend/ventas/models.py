@@ -7,6 +7,9 @@ from productos.models import Producto, Combo
 
 class Venta(TenantModel):
     numero_ticket = models.BigIntegerField(null=True, blank=True)
+    # Generado en el cliente al crear la venta (incluso offline). Permite reintentar
+    # el envío sin duplicar la venta cuando se sincroniza la cola offline del POS.
+    sync_uuid = models.UUIDField(null=True, blank=True)
     vendedor = models.ForeignKey(Perfil, on_delete=models.SET_NULL, null=True, blank=True)
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True)
     caja_sesion = models.ForeignKey(CajaSesion, on_delete=models.SET_NULL, null=True, blank=True)
@@ -40,6 +43,13 @@ class Venta(TenantModel):
 
     class Meta:
         indexes = [models.Index(fields=["comercio", "-created_at"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comercio", "sync_uuid"],
+                condition=models.Q(sync_uuid__isnull=False),
+                name="unique_venta_sync_uuid_por_comercio",
+            )
+        ]
 
 
 class VentaItem(BaseModel):

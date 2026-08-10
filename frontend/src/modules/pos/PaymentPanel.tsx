@@ -1,0 +1,114 @@
+import { useState } from 'react'
+import { Loader2, UserRound, X, Zap } from 'lucide-react'
+import { Button } from '../../components/ui/Button'
+import { Input } from '../../components/ui/Input'
+import { Select } from '../../components/ui/Select'
+import { formatMoney } from '../../lib/format'
+import { useClientesSearch, useCuentasPago } from './api'
+import type { Cliente } from './types'
+
+export interface DatosCobro {
+  cliente: Cliente | null
+  cuentaPagoId: string
+  descuento: string
+  recargoMonto: string
+  efectivoRecibido: string
+}
+
+interface Props {
+  subtotal: number
+  cobrando: boolean
+  disabled: boolean
+  onCobrar: (datos: DatosCobro) => void
+}
+
+export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) {
+  const { data: cuentas } = useCuentasPago()
+  const [cuentaPagoId, setCuentaPagoId] = useState('')
+  const [descuento, setDescuento] = useState('0')
+  const [recargoMonto, setRecargoMonto] = useState('0')
+  const [efectivoRecibido, setEfectivoRecibido] = useState('')
+  const [busquedaCliente, setBusquedaCliente] = useState('')
+  const [cliente, setCliente] = useState<Cliente | null>(null)
+  const { data: clientesEncontrados } = useClientesSearch(busquedaCliente)
+
+  const cuentaSeleccionada = cuentas?.find((c) => c.id === cuentaPagoId)
+  const esEfectivo = !cuentaSeleccionada || cuentaSeleccionada.tipo === 'efectivo'
+
+  const total = Math.max(subtotal - Number(descuento || 0) + Number(recargoMonto || 0), 0)
+  const vuelto = esEfectivo && efectivoRecibido ? Math.max(Number(efectivoRecibido) - total, 0) : null
+
+  return (
+    <div className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-surface p-4">
+      <div>
+        <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Cliente</span>
+        {cliente ? (
+          <div className="mt-1.5 flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
+            <span className="flex items-center gap-2"><UserRound size={14} className="text-accent" /> {cliente.nombre}</span>
+            <button onClick={() => setCliente(null)} className="text-text-dim hover:text-danger"><X size={14} /></button>
+          </div>
+        ) : (
+          <div className="relative">
+            <Input
+              id="cliente-search" placeholder="Consumidor final (opcional)" className="mt-1.5"
+              value={busquedaCliente} onChange={(e) => setBusquedaCliente(e.target.value)}
+            />
+            {clientesEncontrados && clientesEncontrados.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+                {clientesEncontrados.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setCliente(c); setBusquedaCliente('') }}
+                    className="block w-full px-3 py-2 text-left text-sm hover:bg-surface-2"
+                  >
+                    {c.nombre}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Select id="cuenta-pago" label="Medio de pago" value={cuentaPagoId} onChange={(e) => setCuentaPagoId(e.target.value)}>
+        <option value="">Efectivo</option>
+        {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+      </Select>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Input id="descuento" label="Descuento $" type="number" min="0" step="0.01" value={descuento} onChange={(e) => setDescuento(e.target.value)} />
+        <Input id="recargo" label="Recargo $" type="number" min="0" step="0.01" value={recargoMonto} onChange={(e) => setRecargoMonto(e.target.value)} />
+      </div>
+
+      {esEfectivo && (
+        <Input
+          id="efectivo-recibido" label="Efectivo recibido" type="number" min="0" step="0.01"
+          value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)}
+        />
+      )}
+
+      <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
+        <div className="flex items-center justify-between text-sm text-text-dim">
+          <span>Subtotal</span><span className="tabular-nums">{formatMoney(subtotal)}</span>
+        </div>
+        <div className="flex items-center justify-between text-lg font-semibold text-text">
+          <span>Total</span><span className="tabular-nums">{formatMoney(total)}</span>
+        </div>
+        {vuelto !== null && (
+          <div className="flex items-center justify-between text-sm text-accent-2">
+            <span>Vuelto</span><span className="tabular-nums">{formatMoney(vuelto)}</span>
+          </div>
+        )}
+
+        <Button
+          disabled={disabled || cobrando}
+          onClick={() => onCobrar({ cliente, cuentaPagoId, descuento, recargoMonto, efectivoRecibido })}
+          className="mt-2 justify-center py-3 text-base"
+        >
+          {cobrando ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+          Cobrar
+        </Button>
+      </div>
+    </div>
+  )
+}

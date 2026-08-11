@@ -68,7 +68,13 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Admin', path: '/admin', icon: Shield },
   { label: 'Empleados', path: '/empleados', icon: UserCog },
   { label: 'Proveedores', path: '/proveedores', icon: Truck },
-  { label: 'Pedidos', path: '/pedidos', icon: PackageSearch },
+  {
+    label: 'Pedidos', path: '/pedidos', icon: PackageSearch,
+    children: [
+      { label: 'Sugeridos', path: '/pedidos/sugeridos' },
+      { label: 'Manuales', path: '/pedidos/manuales' },
+    ],
+  },
   { label: 'Compras', path: '/compras', icon: ShoppingBag },
   {
     label: 'Caja', path: '/caja', icon: Wallet,

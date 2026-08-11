@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { useCreateCuentaPago, useUpdateCuentaPago } from './api'
 import type { CuentaPago } from './types'
 
@@ -33,8 +34,8 @@ export function CuentaPagoFormModal({ cuenta, onClose }: { cuenta: CuentaPago | 
       }
       toast(cuenta ? 'Contenedor actualizado' : 'Contenedor creado')
       onClose()
-    } catch {
-      toast('No se pudo guardar el contenedor', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo guardar el contenedor'), 'error')
     }
   }
 

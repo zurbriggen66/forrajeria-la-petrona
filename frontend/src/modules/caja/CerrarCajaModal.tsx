@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useCerrarCaja } from './api'
 import type { CajaSesion } from './types'
@@ -19,8 +20,8 @@ export function CerrarCajaModal({ sesion, onClose }: { sesion: CajaSesion; onClo
     try {
       const data = await cerrarCaja.mutateAsync({ id: sesion.id, monto_cierre: montoCierre })
       setResultado(data)
-    } catch {
-      toast('No se pudo cerrar la caja', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo cerrar la caja'), 'error')
     }
   }
 

@@ -4,6 +4,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { useAplicarAjuste, useCategorias, useProveedores } from './api'
 
 export function Aumentos() {
@@ -34,8 +35,8 @@ export function Aumentos() {
       toast(`Se actualizaron ${res.cant_productos} producto${res.cant_productos === 1 ? '' : 's'}`)
       setDescripcion('')
       setValor('')
-    } catch {
-      toast('No se pudo aplicar el aumento', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo aplicar el aumento'), 'error')
     }
   }
 

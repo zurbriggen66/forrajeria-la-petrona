@@ -10,7 +10,8 @@ from rest_framework.response import Response
 
 from caja.models import CajaMovimiento, CajaSesion, CuentaPago
 from caja.views import resolver_cuenta_efectivo
-from clientes.models import Cliente
+from clientes.models import Cliente, ClienteMovimiento
+from clientes.views import aplicar_movimiento_cliente
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
 from kubobots.models import KubobotsCliente
@@ -73,7 +74,7 @@ class VentaViewSet(TenantViewSet):
     @action(detail=True, methods=["post"])
     def anular(self, request, pk=None):
         comercio = resolver_comercio_activo(request)
-        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related("caja_sesion").first()
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related("caja_sesion", "cliente").first()
         if venta is None:
             raise ValidationError("La venta no existe.")
         if venta.anulada:
@@ -97,15 +98,30 @@ class VentaViewSet(TenantViewSet):
 
             # Sólo se corrige el arqueo si la caja de esa venta sigue abierta:
             # una sesión ya cerrada no se retoca, queda como quedó reportada.
-            if venta.caja_sesion_id and venta.caja_sesion.estado == "abierta":
+            # Se revierte sólo lo que realmente entró a la caja en su momento
+            # (total menos lo que se cargó a cuenta corriente, si hubo).
+            monto_caja = venta.total - venta.monto_cuenta_corriente
+            if venta.caja_sesion_id and venta.caja_sesion.estado == "abierta" and monto_caja > 0:
                 CajaMovimiento.objects.create(
                     comercio=comercio,
                     sesion=venta.caja_sesion,
                     cuenta=venta.cuenta_pago or resolver_cuenta_efectivo(comercio),
                     tipo="egreso",
                     concepto=f"Anulación venta #{venta.numero_ticket}",
-                    monto=venta.total,
+                    monto=monto_caja,
                 )
+
+            # Ídem para lo que se había cargado a la cuenta corriente del
+            # cliente: se revierte siempre, sin importar el estado de la caja.
+            if venta.monto_cuenta_corriente > 0 and venta.cliente_id:
+                ClienteMovimiento.objects.create(
+                    comercio=comercio,
+                    cliente=venta.cliente,
+                    tipo="ajuste",
+                    monto=-venta.monto_cuenta_corriente,
+                    referencia=f"Anulación venta #{venta.numero_ticket}",
+                )
+                aplicar_movimiento_cliente(venta.cliente, "ajuste", -venta.monto_cuenta_corriente)
 
         return Response(VentaSerializer(venta).data)
 
@@ -125,7 +141,9 @@ class VentaViewSet(TenantViewSet):
 
             cliente_obj = None
             if data["cliente"]:
-                cliente_obj = Cliente.objects.filter(comercio=comercio, id=data["cliente"]).first()
+                # select_for_update: se va a leer y potencialmente actualizar
+                # saldo_actual más abajo si la venta se carga a cuenta corriente.
+                cliente_obj = Cliente.objects.select_for_update().filter(comercio=comercio, id=data["cliente"]).first()
                 if cliente_obj is None:
                     raise ValidationError({"cliente": "No pertenece a este comercio."})
 
@@ -174,6 +192,19 @@ class VentaViewSet(TenantViewSet):
             if total < 0:
                 total = Decimal("0")
 
+            monto_cuenta_corriente = data["monto_cuenta_corriente"]
+            if monto_cuenta_corriente > 0:
+                if cliente_obj is None:
+                    raise ValidationError({"cliente": "Elegí un cliente para cargar la venta a su cuenta corriente."})
+                if monto_cuenta_corriente > total:
+                    raise ValidationError({"monto_cuenta_corriente": "No puede ser mayor al total de la venta."})
+                saldo_resultante = cliente_obj.saldo_actual + monto_cuenta_corriente
+                if saldo_resultante > cliente_obj.limite_credito:
+                    disponible = cliente_obj.limite_credito - cliente_obj.saldo_actual
+                    raise ValidationError({
+                        "monto_cuenta_corriente": f"Supera el límite de crédito del cliente (disponible: {disponible})."
+                    })
+
             vuelto = None
             if data["efectivo_recibido"] is not None:
                 vuelto = max(data["efectivo_recibido"] - total, Decimal("0"))
@@ -199,6 +230,7 @@ class VentaViewSet(TenantViewSet):
                 monto_efectivo=data["monto_efectivo"],
                 monto_tarjeta=data["monto_tarjeta"],
                 monto_transferencia=data["monto_transferencia"],
+                monto_cuenta_corriente=monto_cuenta_corriente,
                 efectivo_recibido=data["efectivo_recibido"],
                 vuelto=vuelto,
                 origen=data["origen"] or "pos",
@@ -208,14 +240,28 @@ class VentaViewSet(TenantViewSet):
             VentaItem.objects.bulk_create(items_a_crear)
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
 
-            CajaMovimiento.objects.create(
-                comercio=comercio,
-                sesion=caja_sesion,
-                cuenta=cuenta_pago_obj or resolver_cuenta_efectivo(comercio),
-                tipo="ingreso",
-                concepto=f"Venta #{numero_ticket}",
-                monto=total,
-            )
+            # Sólo lo efectivamente cobrado en el momento entra a la caja; lo
+            # cargado a cuenta corriente no es plata que haya entrado hoy.
+            monto_caja = total - monto_cuenta_corriente
+            if monto_caja > 0:
+                CajaMovimiento.objects.create(
+                    comercio=comercio,
+                    sesion=caja_sesion,
+                    cuenta=cuenta_pago_obj or resolver_cuenta_efectivo(comercio),
+                    tipo="ingreso",
+                    concepto=f"Venta #{numero_ticket}",
+                    monto=monto_caja,
+                )
+
+            if monto_cuenta_corriente > 0:
+                ClienteMovimiento.objects.create(
+                    comercio=comercio,
+                    cliente=cliente_obj,
+                    tipo="cargo",
+                    monto=monto_cuenta_corriente,
+                    referencia=f"Venta #{numero_ticket}",
+                )
+                aplicar_movimiento_cliente(cliente_obj, "cargo", monto_cuenta_corriente)
 
             if (
                 cliente_obj

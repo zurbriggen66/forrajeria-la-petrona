@@ -26,6 +26,7 @@ class VentaCreateSerializer(serializers.Serializer):
     monto_efectivo = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_tarjeta = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_transferencia = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
+    monto_cuenta_corriente = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     efectivo_recibido = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True, default=None)
     descuento = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     recargo_monto = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -60,7 +61,7 @@ class VentaSerializer(serializers.ModelSerializer):
             "id", "numero_ticket", "sync_uuid", "vendedor", "vendedor_nombre",
             "cliente", "cliente_nombre", "cuenta_pago", "cuenta_pago_nombre",
             "total", "descuento", "recargo_monto", "metodo_pago",
-            "monto_efectivo", "monto_tarjeta", "monto_transferencia",
+            "monto_efectivo", "monto_tarjeta", "monto_transferencia", "monto_cuenta_corriente",
             "efectivo_recibido", "vuelto", "origen",
             "anulada", "motivo_anulacion", "fecha_anulacion", "created_at", "items",
         ]

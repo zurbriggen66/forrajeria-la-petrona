@@ -1,0 +1,185 @@
+import { useState } from 'react'
+import { Loader2, Pencil, Receipt, UserPlus, Wallet } from 'lucide-react'
+import { Button } from '../../components/ui/Button'
+import { KpiCard } from '../../components/ui/KpiCard'
+import { Modal } from '../../components/ui/Modal'
+import { Select } from '../../components/ui/Select'
+import { Table, type Column } from '../../components/ui/Table'
+import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
+import { formatMoney } from '../../lib/format'
+import { useVendedores, useVentas } from '../ventas/api'
+import type { Venta } from '../ventas/types'
+import {
+  useAsignacionesCliente,
+  useAsignarVendedor,
+  useDesactivarAsignacion,
+  useMovimientosCliente,
+} from './api'
+import { ClienteFormModal } from './ClienteFormModal'
+import { ClienteMovimientoFormModal } from './ClienteMovimientoFormModal'
+import type { Cliente, ClienteMovimiento } from './types'
+
+function formatFecha(iso: string) {
+  return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+const COLOR_TIPO_MOVIMIENTO: Record<string, string> = {
+  cargo: 'text-danger',
+  pago: 'text-accent-2',
+  ajuste: 'text-warning',
+}
+
+const LABEL_TIPO_MOVIMIENTO: Record<string, string> = {
+  cargo: 'Cargo (venta fiada)',
+  pago: 'Pago',
+  ajuste: 'Ajuste',
+}
+
+function AsignacionVendedor({ cliente }: { cliente: Cliente }) {
+  const { toast } = useToast()
+  const { data: asignaciones } = useAsignacionesCliente(cliente.id)
+  const { data: vendedores } = useVendedores()
+  const asignarVendedor = useAsignarVendedor(cliente.id)
+  const desactivar = useDesactivarAsignacion(cliente.id)
+  const [seleccion, setSeleccion] = useState('')
+
+  const activa = asignaciones?.find((a) => a.activo)
+
+  async function handleAsignar() {
+    if (!seleccion) return
+    try {
+      if (activa) await desactivar.mutateAsync(activa.id)
+      await asignarVendedor.mutateAsync(seleccion)
+      toast('Vendedor asignado')
+      setSeleccion('')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo asignar el vendedor'), 'error')
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-text">
+        <UserPlus size={15} className="text-accent" /> Vendedor asignado
+      </h3>
+      {activa ? (
+        <p className="mb-3 text-sm text-text-dim">
+          Atendido por <span className="font-medium text-text">{activa.vendedor_nombre ?? 'Sin nombre'}</span>
+        </p>
+      ) : (
+        <p className="mb-3 text-sm text-text-dim">Sin vendedor asignado.</p>
+      )}
+      <div className="flex gap-2">
+        <Select
+          id="select-vendedor-asignar" aria-label="Elegir vendedor"
+          value={seleccion} onChange={(e) => setSeleccion(e.target.value)} className="flex-1"
+        >
+          <option value="">{activa ? 'Reasignar a…' : 'Elegí un vendedor…'}</option>
+          {vendedores?.map((v) => <option key={v.id} value={v.id}>{v.nombre_completo}</option>)}
+        </Select>
+        <Button
+          type="button" onClick={handleAsignar}
+          disabled={!seleccion || asignarVendedor.isPending || desactivar.isPending}
+        >
+          Asignar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; onClose: () => void }) {
+  const [editando, setEditando] = useState(false)
+  const [movimientoModo, setMovimientoModo] = useState<'pago' | 'ajuste' | null>(null)
+
+  const { data: movimientos, isLoading: cargandoMovimientos } = useMovimientosCliente(cliente.id)
+  const { data: ventasData, isLoading: cargandoVentas } = useVentas({ cliente: cliente.id })
+
+  const disponible = Number(cliente.limite_credito) - Number(cliente.saldo_actual)
+
+  const columnasMovimientos: Column<ClienteMovimiento>[] = [
+    { header: 'Fecha', render: (m) => formatFecha(m.created_at) },
+    { header: 'Tipo', render: (m) => <span className={COLOR_TIPO_MOVIMIENTO[m.tipo] ?? ''}>{LABEL_TIPO_MOVIMIENTO[m.tipo] ?? m.tipo}</span> },
+    { header: 'Motivo', render: (m) => m.referencia || '—' },
+    {
+      header: 'Monto', className: 'tabular-nums text-right',
+      render: (m) => (
+        <span className={COLOR_TIPO_MOVIMIENTO[m.tipo] ?? ''}>
+          {m.tipo === 'pago' ? '-' : '+'}{formatMoney(m.monto)}
+        </span>
+      ),
+    },
+  ]
+
+  const columnasVentas: Column<Venta>[] = [
+    { header: 'Ticket', render: (v) => `#${v.numero_ticket ?? '—'}` },
+    { header: 'Fecha', render: (v) => formatFecha(v.created_at) },
+    { header: 'Total', render: (v) => formatMoney(v.total), className: 'tabular-nums' },
+    {
+      header: 'Fiado',
+      className: 'tabular-nums',
+      render: (v) => (Number(v.monto_cuenta_corriente) > 0 ? formatMoney(v.monto_cuenta_corriente) : '—'),
+    },
+    {
+      header: 'Estado',
+      render: (v) => (v.anulada ? <span className="text-danger">Anulada</span> : <span className="text-accent-2">Activa</span>),
+    },
+  ]
+
+  if (editando) {
+    return <ClienteFormModal cliente={cliente} onClose={() => setEditando(false)} />
+  }
+
+  return (
+    <Modal title={cliente.nombre} onClose={onClose} wide>
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-dim">
+          <span>{cliente.telefono || cliente.celular || 'Sin teléfono'} · {cliente.email || 'sin email'}</span>
+          <button onClick={() => setEditando(true)} className="flex items-center gap-1 text-accent hover:underline">
+            <Pencil size={13} /> Editar datos
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <KpiCard label="Saldo (cuenta corriente)" value={formatMoney(cliente.saldo_actual)} icon={Wallet} accent={Number(cliente.saldo_actual) > 0 ? 'danger' : 'accent-2'} />
+          <KpiCard label="Límite de crédito" value={formatMoney(cliente.limite_credito)} icon={Wallet} />
+          <KpiCard label="Disponible" value={formatMoney(disponible)} icon={Wallet} accent={disponible < 0 ? 'danger' : 'accent-2'} />
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setMovimientoModo('pago')}>Registrar pago</Button>
+          <Button variant="secondary" onClick={() => setMovimientoModo('ajuste')}>Ajuste manual</Button>
+        </div>
+
+        <AsignacionVendedor cliente={cliente} />
+
+        <div>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
+            <Wallet size={15} className="text-accent" /> Movimientos de cuenta corriente
+          </h3>
+          {cargandoMovimientos ? (
+            <div className="flex items-center gap-2 py-6 text-text-dim"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
+          ) : (
+            <Table columns={columnasMovimientos} rows={movimientos ?? []} rowKey={(m) => m.id} emptyMessage="Sin movimientos todavía." />
+          )}
+        </div>
+
+        <div>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
+            <Receipt size={15} className="text-accent" /> Ventas de este cliente
+          </h3>
+          {cargandoVentas ? (
+            <div className="flex items-center gap-2 py-6 text-text-dim"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
+          ) : (
+            <Table columns={columnasVentas} rows={ventasData?.results ?? []} rowKey={(v) => v.id} emptyMessage="Todavía no le vendiste nada." />
+          )}
+        </div>
+      </div>
+
+      {movimientoModo && (
+        <ClienteMovimientoFormModal clienteId={cliente.id} tipo={movimientoModo} onClose={() => setMovimientoModo(null)} />
+      )}
+    </Modal>
+  )
+}

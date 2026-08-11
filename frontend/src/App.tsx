@@ -25,9 +25,16 @@ import { Panel } from './modules/estadisticas/Panel'
 import { Rankings } from './modules/estadisticas/Rankings'
 import { Rentabilidad } from './modules/estadisticas/Rentabilidad'
 import { VerdadDelNegocio } from './modules/estadisticas/VerdadDelNegocio'
+import { Proveedores } from './modules/proveedores/Proveedores'
+import { PedidosSugeridos } from './modules/proveedores/PedidosSugeridos'
+import { PedidosManuales } from './modules/proveedores/PedidosManuales'
+import { Compras } from './modules/compras/Compras'
+import { Deposito } from './modules/inventario/Deposito'
+import { Clientes } from './modules/clientes/Clientes'
+import { Leads } from './modules/crm/Leads'
 
-// Módulos ya implementados (ROADMAP Fases 1 a 4). El resto sigue como
-// placeholder hasta que le toque su fase.
+// Módulos ya implementados (ROADMAP Fases 1 a 6, sin Kubobots). El resto
+// sigue como placeholder hasta que le toque su fase.
 const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/pos': PosPage,
   '/productos/listado': ProductosListado,
@@ -47,6 +54,13 @@ const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/estadisticas/rankings': Rankings,
   '/estadisticas/rentabilidad': Rentabilidad,
   '/verdad-del-negocio': VerdadDelNegocio,
+  '/proveedores': Proveedores,
+  '/pedidos/sugeridos': PedidosSugeridos,
+  '/pedidos/manuales': PedidosManuales,
+  '/compras': Compras,
+  '/deposito': Deposito,
+  '/clientes': Clientes,
+  '/crm': Leads,
 }
 
 function App() {

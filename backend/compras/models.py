@@ -2,6 +2,7 @@ from django.db import models
 from core.models import BaseModel, TenantModel
 from proveedores.models import Proveedor
 from productos.models import Producto
+from caja.models import CajaSesion
 
 
 class Compra(TenantModel):
@@ -10,6 +11,9 @@ class Compra(TenantModel):
     fecha = models.DateField()
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     pagado = models.BooleanField(default=False)
+    # Si se marca pagada al momento de cargarla y hay una caja abierta, queda
+    # atada a esa sesión y genera el egreso correspondiente (ídem Gasto).
+    caja_sesion = models.ForeignKey(CajaSesion, on_delete=models.SET_NULL, null=True, blank=True)
 
 
 class CompraItem(BaseModel):

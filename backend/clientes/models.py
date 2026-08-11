@@ -19,6 +19,16 @@ class Cliente(TenantModel):
         return self.nombre
 
 
+class ClienteMovimiento(TenantModel):
+    """Cuenta corriente del cliente: ventas 'fiadas' (cargo) y pagos que hace
+    para saldarlas, ídem ProveedorMovimiento pero en sentido inverso — acá el
+    saldo es lo que el cliente le debe al comercio."""
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="movimientos")
+    tipo = models.CharField(max_length=30)  # cargo | pago | ajuste
+    monto = models.DecimalField(max_digits=14, decimal_places=2)
+    referencia = models.CharField(max_length=120, blank=True)
+
+
 class ClienteAsignacion(TenantModel):
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE)
     vendedor = models.ForeignKey(Perfil, on_delete=models.SET_NULL, null=True, blank=True)

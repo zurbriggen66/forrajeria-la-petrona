@@ -66,13 +66,15 @@ export function PosPage() {
     if (cart.length === 0) return
     setCobrando(true)
     try {
+      const total = Math.max(subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0), 0)
       const resultado = await crearVenta({
         items: cart.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad })),
         cliente: datos.cliente?.id ?? null,
         cuenta_pago: datos.cuentaPagoId || null,
-        metodo_pago: datos.cuentaPagoId ? '' : 'efectivo',
-        monto_efectivo: datos.efectivoRecibido || undefined,
-        efectivo_recibido: datos.efectivoRecibido || null,
+        metodo_pago: datos.cuentaCorriente ? 'cuenta_corriente' : datos.cuentaPagoId ? '' : 'efectivo',
+        monto_efectivo: datos.cuentaCorriente ? undefined : datos.efectivoRecibido || undefined,
+        monto_cuenta_corriente: datos.cuentaCorriente ? String(total) : undefined,
+        efectivo_recibido: datos.cuentaCorriente ? null : datos.efectivoRecibido || null,
         descuento: datos.descuento,
         recargo_monto: datos.recargoMonto,
       })

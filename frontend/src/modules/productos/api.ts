@@ -30,6 +30,23 @@ export function useProductos(params: ProductosQuery = {}) {
   })
 }
 
+/** Búsqueda liviana server-side para elegir un producto puntual (Compras,
+ * Pedidos, Transferencia de stock…): con catálogos de miles de productos,
+ * un <select> con todo el catálogo cargado es inviable — esto sólo trae
+ * unos pocos resultados por término de búsqueda. */
+export function useProductoSearch(query: string) {
+  return useQuery({
+    queryKey: ['productos-search', query],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<Producto>>('/productos/', {
+        params: { page_size: 8, search: query, ordering: 'nombre' },
+      })
+      return data.results
+    },
+    enabled: query.trim().length >= 2,
+  })
+}
+
 export function useCategorias() {
   return useQuery({
     queryKey: ['categorias-productos'],

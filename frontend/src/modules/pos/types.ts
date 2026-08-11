@@ -12,6 +12,7 @@ export interface VentaInput {
   monto_efectivo?: string
   monto_tarjeta?: string
   monto_transferencia?: string
+  monto_cuenta_corriente?: string
   efectivo_recibido?: string | null
   descuento?: string
   recargo_monto?: string
@@ -44,6 +45,7 @@ export interface VentaResult {
   monto_efectivo: string
   monto_tarjeta: string
   monto_transferencia: string
+  monto_cuenta_corriente: string
   efectivo_recibido: string | null
   vuelto: string | null
   origen: string
@@ -66,6 +68,7 @@ export interface Cliente {
   telefono: string
   tipo: string
   saldo_actual: string
+  limite_credito: string
   kubobots_fid_off: boolean
 }
 

@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { buscarProductoUniversal, useCategorias, useCreateProducto, useProveedores, useUpdateProducto } from './api'
 import type { Producto, ProductoInput } from './types'
 
@@ -82,8 +83,8 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
         toast('Producto creado')
       }
       onClose()
-    } catch {
-      toast('No se pudo guardar el producto', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo guardar el producto'), 'error')
     }
   }
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Table, type Column } from '../../components/ui/Table'
-import { formatMoney } from '../../lib/format'
+import { formatFechaSola, formatMoney } from '../../lib/format'
 import { useGastos } from './api'
 import { GastoFormModal } from './GastoFormModal'
 import type { Gasto } from './types'
@@ -12,7 +12,7 @@ export function Gastos() {
   const [showForm, setShowForm] = useState(false)
 
   const columns: Column<Gasto>[] = [
-    { header: 'Fecha', render: (g) => new Date(g.fecha).toLocaleDateString('es-AR') },
+    { header: 'Fecha', render: (g) => formatFechaSola(g.fecha) },
     { header: 'Categoría', render: (g) => g.categoria || '—' },
     { header: 'Descripción', render: (g) => g.descripcion || '—' },
     { header: 'Contenedor', render: (g) => g.cuenta_nombre ?? '—' },

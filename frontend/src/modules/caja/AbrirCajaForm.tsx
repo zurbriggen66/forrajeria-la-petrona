@@ -3,6 +3,7 @@ import { Lock, Loader2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { useAbrirCaja } from './api'
 
 export function AbrirCajaForm({ subtitle }: { subtitle?: string }) {
@@ -15,8 +16,8 @@ export function AbrirCajaForm({ subtitle }: { subtitle?: string }) {
     try {
       await abrirCaja.mutateAsync(monto || '0')
       toast('Caja abierta')
-    } catch {
-      toast('No se pudo abrir la caja', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo abrir la caja'), 'error')
     }
   }
 

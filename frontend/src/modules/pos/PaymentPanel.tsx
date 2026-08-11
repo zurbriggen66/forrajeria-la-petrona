@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, UserRound, X, Zap } from 'lucide-react'
+import { Loader2, UserRound, Wallet, X, Zap } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
@@ -7,9 +7,12 @@ import { formatMoney } from '../../lib/format'
 import { useClientesSearch, useCuentasPago } from './api'
 import type { Cliente } from './types'
 
+const CUENTA_CORRIENTE = 'cuenta_corriente'
+
 export interface DatosCobro {
   cliente: Cliente | null
   cuentaPagoId: string
+  cuentaCorriente: boolean
   descuento: string
   recargoMonto: string
   efectivoRecibido: string
@@ -32,11 +35,13 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const { data: clientesEncontrados } = useClientesSearch(busquedaCliente)
 
+  const esCuentaCorriente = cuentaPagoId === CUENTA_CORRIENTE
   const cuentaSeleccionada = cuentas?.find((c) => c.id === cuentaPagoId)
-  const esEfectivo = !cuentaSeleccionada || cuentaSeleccionada.tipo === 'efectivo'
+  const esEfectivo = !esCuentaCorriente && (!cuentaSeleccionada || cuentaSeleccionada.tipo === 'efectivo')
 
   const total = Math.max(subtotal - Number(descuento || 0) + Number(recargoMonto || 0), 0)
   const vuelto = esEfectivo && efectivoRecibido ? Math.max(Number(efectivoRecibido) - total, 0) : null
+  const disponibleCredito = cliente ? Number(cliente.limite_credito) - Number(cliente.saldo_actual) : null
 
   return (
     <div className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-surface p-4">
@@ -45,7 +50,12 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         {cliente ? (
           <div className="mt-1.5 flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
             <span className="flex items-center gap-2"><UserRound size={14} className="text-accent" /> {cliente.nombre}</span>
-            <button onClick={() => setCliente(null)} className="text-text-dim hover:text-danger"><X size={14} /></button>
+            <button
+              onClick={() => { setCliente(null); if (esCuentaCorriente) setCuentaPagoId('') }}
+              className="text-text-dim hover:text-danger"
+            >
+              <X size={14} />
+            </button>
           </div>
         ) : (
           <div className="relative">
@@ -73,6 +83,9 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
       <Select id="cuenta-pago" label="Medio de pago" value={cuentaPagoId} onChange={(e) => setCuentaPagoId(e.target.value)}>
         <option value="">Efectivo</option>
         {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        <option value={CUENTA_CORRIENTE} disabled={!cliente}>
+          Cuenta corriente (fiado){!cliente ? ' — elegí un cliente' : ''}
+        </option>
       </Select>
 
       <div className="grid grid-cols-2 gap-3">
@@ -85,6 +98,12 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
           id="efectivo-recibido" label="Efectivo recibido" type="number" min="0" step="0.01"
           value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)}
         />
+      )}
+
+      {esCuentaCorriente && disponibleCredito !== null && (
+        <p className={`flex items-center gap-1.5 text-xs ${total > disponibleCredito ? 'text-danger' : 'text-text-dim'}`}>
+          <Wallet size={13} /> Disponible en su cuenta: <span className="font-medium">{formatMoney(disponibleCredito)}</span>
+        </p>
       )}
 
       <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
@@ -101,8 +120,13 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         )}
 
         <Button
-          disabled={disabled || cobrando}
-          onClick={() => onCobrar({ cliente, cuentaPagoId, descuento, recargoMonto, efectivoRecibido })}
+          disabled={disabled || cobrando || (esCuentaCorriente && disponibleCredito !== null && total > disponibleCredito)}
+          onClick={() => onCobrar({
+            cliente,
+            cuentaPagoId: esCuentaCorriente ? '' : cuentaPagoId,
+            cuentaCorriente: esCuentaCorriente,
+            descuento, recargoMonto, efectivoRecibido,
+          })}
           className="mt-2 justify-center py-3 text-base"
         >
           {cobrando ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}

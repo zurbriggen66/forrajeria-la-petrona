@@ -1,4 +1,36 @@
+from decimal import Decimal
+
 from rest_framework import serializers
+
+from .models import Deposito, StockDeposito
+
+
+class DepositoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Deposito
+        fields = ["id", "nombre", "direccion", "activo"]
+
+
+class StockDepositoSerializer(serializers.ModelSerializer):
+    deposito_nombre = serializers.CharField(source="deposito.nombre", read_only=True)
+    producto_nombre = serializers.CharField(source="producto.nombre", read_only=True)
+
+    class Meta:
+        model = StockDeposito
+        fields = ["id", "deposito", "deposito_nombre", "producto", "producto_nombre", "stock"]
+        read_only_fields = fields
+
+
+class TransferenciaStockSerializer(serializers.Serializer):
+    producto = serializers.UUIDField()
+    cantidad = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+    origen = serializers.CharField()  # "central" o el id de un Deposito
+    destino = serializers.CharField()  # ídem
+
+    def validate(self, data):
+        if data["origen"] == data["destino"]:
+            raise serializers.ValidationError("El origen y el destino no pueden ser el mismo.")
+        return data
 
 
 class InventarioResumenSerializer(serializers.Serializer):

@@ -34,6 +34,7 @@ export interface Venta {
   monto_efectivo: string
   monto_tarjeta: string
   monto_transferencia: string
+  monto_cuenta_corriente: string
   efectivo_recibido: string | null
   vuelto: string | null
   origen: string
@@ -51,6 +52,7 @@ export interface VentasFiltros {
   cuenta_pago?: string
   categoria?: string
   proveedor?: string
+  cliente?: string
   anulada?: boolean
   numero_ticket?: string
 }

@@ -1,12 +1,88 @@
+from django.db import transaction
 from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, When
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.exceptions import MethodNotAllowed, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.mixins import resolver_comercio_activo
+from core.mixins import TenantViewSet, resolver_comercio_activo
 from productos.models import Producto
 
-from .serializers import InventarioResumenSerializer, RankingRentabilidadItemSerializer
+from .models import Deposito, StockDeposito
+from .serializers import (
+    DepositoSerializer,
+    InventarioResumenSerializer,
+    RankingRentabilidadItemSerializer,
+    StockDepositoSerializer,
+    TransferenciaStockSerializer,
+)
+
+
+class DepositoViewSet(TenantViewSet):
+    """Depósitos/contenedores de stock aparte del local (Fase 5)."""
+
+    queryset = Deposito.objects.all().order_by("nombre")
+    serializer_class = DepositoSerializer
+    filterset_fields = ["activo"]
+
+
+class StockDepositoViewSet(TenantViewSet):
+    """Stock por depósito, sólo lectura: se mueve con la acción `transferir`,
+    nunca se edita directamente (evita que se desincronice del origen)."""
+
+    queryset = StockDeposito.objects.select_related("deposito", "producto").all().order_by("deposito__nombre", "producto__nombre")
+    serializer_class = StockDepositoSerializer
+    filterset_fields = ["deposito", "producto"]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_serializer_class(self):
+        if self.action == "transferir":
+            return TransferenciaStockSerializer
+        return StockDepositoSerializer
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed("POST", detail="Usá /inventario/stock-deposito/transferir/ para mover stock.")
+
+    def _resolver_ubicacion(self, comercio, producto, ubicacion):
+        """Devuelve un objeto con .stock legible/escribible: el Producto
+        mismo si ubicacion == "central", o su fila en un depósito puntual."""
+        if ubicacion == "central":
+            return producto
+        deposito = Deposito.objects.filter(comercio=comercio, id=ubicacion).first()
+        if deposito is None:
+            raise ValidationError(f'Depósito "{ubicacion}" no existe en este comercio.')
+        fila, _ = StockDeposito.objects.select_for_update().get_or_create(
+            comercio=comercio, deposito=deposito, producto=producto, defaults={"stock": 0},
+        )
+        return fila
+
+    @action(detail=False, methods=["post"])
+    def transferir(self, request):
+        comercio = resolver_comercio_activo(request)
+        serializer = TransferenciaStockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        with transaction.atomic():
+            producto = Producto.objects.select_for_update().filter(comercio=comercio, id=data["producto"]).first()
+            if producto is None:
+                raise ValidationError({"producto": "No pertenece a este comercio."})
+
+            origen = self._resolver_ubicacion(comercio, producto, data["origen"])
+            destino = self._resolver_ubicacion(comercio, producto, data["destino"])
+
+            if origen.stock < data["cantidad"]:
+                raise ValidationError(f'No hay stock suficiente en el origen (disponible: {origen.stock}).')
+
+            origen.stock -= data["cantidad"]
+            destino.stock += data["cantidad"]
+            origen.save(update_fields=["stock"])
+            if destino is not origen:
+                destino.save(update_fields=["stock"])
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class InventarioResumenView(APIView):

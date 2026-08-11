@@ -195,7 +195,11 @@ class RentabilidadView(APIView):
 
 
 def _rango_por_defecto(params):
-    fecha_hasta = parse_date(params.get("fecha_hasta") or "") or timezone.now().date()
+    # OJO: timezone.now().date() extrae la fecha en UTC, no la fecha local del
+    # comercio (TIME_ZONE = America/Argentina/Buenos_Aires) — de noche esas dos
+    # fechas difieren (ya es "mañana" en UTC). localtime() hace la conversión.
+    hoy_local = timezone.localtime(timezone.now()).date()
+    fecha_hasta = parse_date(params.get("fecha_hasta") or "") or hoy_local
     fecha_desde = parse_date(params.get("fecha_desde") or "") or (fecha_hasta - timedelta(days=29))
     return fecha_desde, fecha_hasta
 

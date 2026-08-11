@@ -3,6 +3,7 @@ import { AlertTriangle, Ban, Loader2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useAnularVenta } from './api'
 import type { Venta } from './types'
@@ -23,8 +24,8 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
       await anularVenta.mutateAsync({ id: venta.id, motivo })
       toast('Venta anulada')
       onClose()
-    } catch {
-      toast('No se pudo anular la venta', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo anular la venta'), 'error')
     }
   }
 

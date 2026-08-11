@@ -22,6 +22,9 @@ class Venta(TenantModel):
     monto_efectivo = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_tarjeta = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_transferencia = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # Porción de `total` cargada a la cuenta corriente del cliente ("fiado")
+    # en vez de cobrada en el momento: no genera movimiento de caja.
+    monto_cuenta_corriente = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     efectivo_recibido = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     vuelto = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     origen = models.CharField(max_length=40, default="pos")

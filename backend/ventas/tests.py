@@ -242,9 +242,12 @@ class VentaAnulacionYFiltrosTests(APITestCase):
 
     def test_filtro_por_rango_de_fechas(self):
         self._vender("1")
-        hoy = timezone.now().date().isoformat()
-        maniana = (timezone.now().date() + timedelta(days=1)).isoformat()
-        ayer = (timezone.now().date() - timedelta(days=1)).isoformat()
+        # timezone.now().date() da la fecha en UTC, no la fecha local del
+        # comercio (Buenos Aires) — de noche difieren. localtime() la corrige.
+        hoy_local = timezone.localtime(timezone.now()).date()
+        hoy = hoy_local.isoformat()
+        maniana = (hoy_local + timedelta(days=1)).isoformat()
+        ayer = (hoy_local - timedelta(days=1)).isoformat()
 
         dentro = self.client.get(f"/api/ventas/?fecha_desde={hoy}&fecha_hasta={maniana}")
         fuera = self.client.get(f"/api/ventas/?fecha_desde={ayer}&fecha_hasta={ayer}")
@@ -267,3 +270,81 @@ class VentaAnulacionYFiltrosTests(APITestCase):
         activas = self.client.get("/api/ventas/?anulada=false")
         self.assertEqual(anuladas.data["count"], 1)
         self.assertEqual(activas.data["count"], 1)
+
+
+class VentaCuentaCorrienteTests(APITestCase):
+    """Fase 6: vender "fiado" tiene que sumar deuda al cliente, respetar su
+    límite de crédito, y no contar como plata que entró a la caja."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.gaseosa = Producto.objects.create(
+            comercio=self.comercio, nombre="Gaseosa", precio_costo=Decimal("100"),
+            precio_venta=Decimal("200"), stock=Decimal("50"),
+        )
+        self.cliente = Cliente.objects.create(
+            comercio=self.comercio, nombre="Juan Fiado", limite_credito=Decimal("1000"),
+        )
+
+    def _vender_fiado(self, cantidad="1", monto_cuenta_corriente="200", cliente=None):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": cantidad}],
+            "cliente": str((cliente or self.cliente).id),
+            "monto_cuenta_corriente": monto_cuenta_corriente,
+        }, format="json")
+
+    def test_venta_fiada_suma_deuda_al_cliente_y_no_genera_ingreso_de_caja(self):
+        response = self._vender_fiado()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("200.00"))
+        self.assertFalse(CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="ingreso").exists())
+
+    def test_venta_parcialmente_fiada_solo_ingresa_a_caja_lo_cobrado(self):
+        # total 200: 120 en efectivo, 80 a cuenta corriente
+        response = self._vender_fiado(monto_cuenta_corriente="80")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        ingreso = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="ingreso")
+        self.assertEqual(ingreso.monto, Decimal("120.00"))
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("80.00"))
+
+    def test_no_se_puede_fiar_sin_elegir_cliente(self):
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+            "monto_cuenta_corriente": "200",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_se_puede_superar_el_limite_de_credito(self):
+        self.cliente.limite_credito = Decimal("100")
+        self.cliente.save()
+        response = self._vender_fiado(monto_cuenta_corriente="200")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("0.00"), "no debe quedar deuda de una venta rechazada")
+
+    def test_limite_de_credito_considera_deuda_previa(self):
+        self.cliente.saldo_actual = Decimal("900")
+        self.cliente.save()
+        response = self._vender_fiado(monto_cuenta_corriente="200")  # 900 + 200 > 1000
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_anular_venta_fiada_revierte_la_deuda(self):
+        venta = self._vender_fiado().data
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("200.00"))
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Error"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("0.00"))

@@ -19,7 +19,7 @@ export function useClientesSearch(search: string) {
   return useQuery({
     queryKey: ['clientes', search],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<Cliente>>('/clientes/', { params: { page_size: 10, search } })
+      const { data } = await api.get<Paginated<Cliente>>('/clientes/', { params: { page_size: 10, search, activo: true } })
       return data.results
     },
     enabled: search.length >= 2,

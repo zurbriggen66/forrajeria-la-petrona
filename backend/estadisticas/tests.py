@@ -53,7 +53,10 @@ class EstadisticasTests(APITestCase):
         anulada = self._vender(self.gaseosa, "1")  # 200, se anula
         self.client.post(f"/api/ventas/{anulada.id}/anular/", {"motivo": "x"}, format="json")
 
-        Gasto.objects.create(comercio=self.comercio, categoria="Insumos", monto=Decimal("150"), fecha=timezone.now().date())
+        Gasto.objects.create(
+            comercio=self.comercio, categoria="Insumos", monto=Decimal("150"),
+            fecha=timezone.localtime(timezone.now()).date(),
+        )
 
         response = self.client.get("/api/estadisticas/resumen/")
         self.assertEqual(response.status_code, 200, response.data)
@@ -78,7 +81,9 @@ class EstadisticasTests(APITestCase):
         Venta.objects.filter(id=venta_vieja.id).update(created_at=timezone.now() - timedelta(days=10))
         self._vender(self.queso, "1")
 
-        hoy = timezone.now().date().isoformat()
+        # timezone.now().date() da la fecha en UTC, no la fecha local del
+        # comercio (Buenos Aires) — de noche difieren. localtime() la corrige.
+        hoy = timezone.localtime(timezone.now()).date().isoformat()
         response = self.client.get(f"/api/estadisticas/resumen/?fecha_desde={hoy}&fecha_hasta={hoy}")
         self.assertEqual(response.data["cantidad_ventas"], 1)
         self.assertEqual(Decimal(response.data["ingresos"]), Decimal("800.00"))
@@ -129,7 +134,7 @@ class EstadisticasTests(APITestCase):
         self.assertIn("Sin proveedor", proveedores)
 
     def test_verdad_del_negocio_comparativa_de_periodo(self):
-        hoy = timezone.now().date()
+        hoy = timezone.localtime(timezone.now()).date()
         venta_actual = self._vender(self.gaseosa, "1")  # 200
         venta_anterior = self._vender(self.queso, "1")  # 800
         Venta.objects.filter(id=venta_anterior.id).update(created_at=timezone.now() - timedelta(days=4))

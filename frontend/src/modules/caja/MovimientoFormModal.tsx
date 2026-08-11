@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { useCrearMovimiento, useCuentasPago, useTransferir } from './api'
 
 type Modo = 'ingreso' | 'egreso' | 'transferencia'
@@ -47,8 +48,8 @@ export function MovimientoFormModal({ modo, onClose }: { modo: Modo; onClose: ()
       }
       toast(modo === 'transferencia' ? 'Transferencia registrada' : 'Movimiento registrado')
       onClose()
-    } catch {
-      toast('No se pudo registrar el movimiento', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo registrar el movimiento'), 'error')
     }
   }
 

@@ -2,32 +2,33 @@ import { useState, type FormEvent } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
-import { Select } from '../../components/ui/Select'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
-import { useCreateCombo, useProductos } from './api'
+import { extraerMensajeError } from '../../lib/errors'
+import { ProductoPicker } from './ProductoPicker'
+import { useCreateCombo } from './api'
+import type { Producto } from './types'
 
 interface Row {
-  producto: string
+  producto: Producto | null
   cantidad: string
 }
 
 export function ComboFormModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast()
-  const { data: productos } = useProductos({ ordering: 'nombre' })
   const createCombo = useCreateCombo()
 
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [precio, setPrecio] = useState('0')
-  const [items, setItems] = useState<Row[]>([{ producto: '', cantidad: '1' }])
+  const [items, setItems] = useState<Row[]>([{ producto: null, cantidad: '1' }])
 
   function updateItem(index: number, patch: Partial<Row>) {
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
   function addRow() {
-    setItems((prev) => [...prev, { producto: '', cantidad: '1' }])
+    setItems((prev) => [...prev, { producto: null, cantidad: '1' }])
   }
 
   function removeRow(index: number) {
@@ -36,17 +37,20 @@ export function ComboFormModal({ onClose }: { onClose: () => void }) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    const validItems = items.filter((i) => i.producto)
+    const validItems = items.filter((i): i is Row & { producto: Producto } => i.producto !== null)
     if (validItems.length === 0) {
       toast('Agregá al menos un producto al combo', 'error')
       return
     }
     try {
-      await createCombo.mutateAsync({ nombre, descripcion, precio, items: validItems })
+      await createCombo.mutateAsync({
+        nombre, descripcion, precio,
+        items: validItems.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad })),
+      })
       toast('Combo creado')
       onClose()
-    } catch {
-      toast('No se pudo crear el combo', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo crear el combo'), 'error')
     }
   }
 
@@ -69,14 +73,9 @@ export function ComboFormModal({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col gap-2">
             {items.map((row, i) => (
               <div key={i} className="flex items-center gap-2">
-                <Select
-                  value={row.producto}
-                  onChange={(e) => updateItem(i, { producto: e.target.value })}
-                  className="flex-1"
-                >
-                  <option value="">Elegí un producto…</option>
-                  {productos?.results.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </Select>
+                <div className="flex-1">
+                  <ProductoPicker producto={row.producto} onSelect={(p) => updateItem(i, { producto: p })} />
+                </div>
                 <Input
                   type="number" min="1" step="1" value={row.cantidad}
                   onChange={(e) => updateItem(i, { cantidad: e.target.value })}

@@ -5,6 +5,7 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { useCuentasPago } from '../caja/api'
 import { useCreateGasto } from './api'
 
@@ -31,8 +32,8 @@ export function GastoFormModal({ onClose }: { onClose: () => void }) {
       await createGasto.mutateAsync({ categoria, descripcion, monto, fecha, cuenta_id: cuentaId || null })
       toast('Gasto registrado')
       onClose()
-    } catch {
-      toast('No se pudo registrar el gasto', 'error')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo registrar el gasto'), 'error')
     }
   }
 

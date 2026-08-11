@@ -2,15 +2,11 @@ import { useState } from 'react'
 import { Loader2, Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { Table, type Column } from '../../components/ui/Table'
-import { formatMoney, formatPct } from '../../lib/format'
+import { formatFechaSola, formatMoney, formatPct } from '../../lib/format'
 import { FiltrosBar } from '../ventas/FiltrosBar'
 import type { VentasFiltros } from '../ventas/types'
 import { useVerdadDelNegocio } from './api'
 import type { Comparativa, RentabilidadCategoria, RentabilidadHora, RentabilidadProveedor } from './types'
-
-function formatFechaCorta(iso: string) {
-  return new Date(iso).toLocaleDateString('es-AR')
-}
 
 export function VerdadDelNegocio() {
   const [filtros, setFiltros] = useState<VentasFiltros>({})
@@ -81,8 +77,8 @@ function ComparativaCard({ data }: { data: Comparativa }) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-5">
       <div className="mb-4 flex items-center justify-between text-xs text-text-dim">
-        <span>Período actual: {formatFechaCorta(data.periodo_actual.desde)} – {formatFechaCorta(data.periodo_actual.hasta)}</span>
-        <span>Anterior: {formatFechaCorta(data.periodo_anterior.desde)} – {formatFechaCorta(data.periodo_anterior.hasta)}</span>
+        <span>Período actual: {formatFechaSola(data.periodo_actual.desde)} – {formatFechaSola(data.periodo_actual.hasta)}</span>
+        <span>Anterior: {formatFechaSola(data.periodo_anterior.desde)} – {formatFechaSola(data.periodo_anterior.hasta)}</span>
       </div>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <KpiCard label="Ingresos período actual" value={formatMoney(data.periodo_actual.ingresos)} accent="accent-2" />

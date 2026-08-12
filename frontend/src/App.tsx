@@ -32,9 +32,13 @@ import { Compras } from './modules/compras/Compras'
 import { Deposito } from './modules/inventario/Deposito'
 import { Clientes } from './modules/clientes/Clientes'
 import { Leads } from './modules/crm/Leads'
+import { Sucursales } from './modules/admin/Sucursales'
+import { Turnos } from './modules/empleados/Turnos'
+import { Etiquetas } from './modules/etiquetas/Etiquetas'
+import { Config } from './modules/config/Config'
 
-// Módulos ya implementados (ROADMAP Fases 1 a 6, sin Kubobots). El resto
-// sigue como placeholder hasta que le toque su fase.
+// Módulos ya implementados (ROADMAP Fases 1 a 8, sin Kubobots, sin Fiscal y
+// sin Mapa Neural). El resto sigue como placeholder hasta que le toque su fase.
 const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/pos': PosPage,
   '/productos/listado': ProductosListado,
@@ -61,6 +65,10 @@ const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/deposito': Deposito,
   '/clientes': Clientes,
   '/crm': Leads,
+  '/admin': Sucursales,
+  '/empleados': Turnos,
+  '/etiquetas': Etiquetas,
+  '/config': Config,
 }
 
 function App() {

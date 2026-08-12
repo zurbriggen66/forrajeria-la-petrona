@@ -7,7 +7,7 @@ import { useCajaActual } from '../modules/caja/api'
 
 export function Statusbar() {
   const location = useLocation()
-  const { user, comercio } = useAuth()
+  const { user, comercio, comercios, setComercioActivo } = useAuth()
   const { data: cajaActual } = useCajaActual()
   const [online, setOnline] = useState(navigator.onLine)
 
@@ -41,7 +41,21 @@ export function Statusbar() {
         </Link>
       </div>
       <div className="flex items-center gap-4">
-        {comercio && <span>{comercio.nombre}</span>}
+        {comercios.length > 1 ? (
+          <select
+            value={comercio?.id ?? ''}
+            onChange={(e) => setComercioActivo(e.target.value)}
+            className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-text focus:border-accent focus:outline-none"
+          >
+            {comercios.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre}
+              </option>
+            ))}
+          </select>
+        ) : (
+          comercio && <span>{comercio.nombre}</span>
+        )}
         <span>
           {user?.nombre_completo} · {user?.rol}
         </span>

@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -157,6 +158,9 @@ CORS_ALLOWED_ORIGINS = env.list(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+# Header con el comercio activo cuando un usuario opera varios comercios
+# (ver core/mixins.py::resolver_comercio_activo) — hay que declararlo explícito
+# o el preflight CORS lo rechaza antes de que la request llegue a la vista.
+CORS_ALLOW_HEADERS = (*default_headers, "x-comercio-id")
 
-# Header con el comercio activo cuando un usuario opera varios comercios.
 COMERCIO_ACTIVO_HEADER = "HTTP_X_COMERCIO_ID"

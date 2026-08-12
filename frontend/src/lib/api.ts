@@ -8,6 +8,7 @@ export const api = axios.create({
 
 const ACCESS_KEY = 'kubo_access_token'
 const REFRESH_KEY = 'kubo_refresh_token'
+const COMERCIO_KEY = 'kubo_comercio_id'
 
 export const tokenStorage = {
   get access() {
@@ -26,10 +27,30 @@ export const tokenStorage = {
   },
 }
 
+// Sucursal activa (Fase 8): un usuario puede operar varios `Comercio`
+// (una por sucursal) — el backend resuelve cuál usar por el header
+// X-Comercio-Id (core/mixins.py::resolver_comercio_activo). Si el usuario
+// opera una sola sucursal el header es innecesario y se omite.
+export const comercioStorage = {
+  get id() {
+    return localStorage.getItem(COMERCIO_KEY)
+  },
+  set(id: string) {
+    localStorage.setItem(COMERCIO_KEY, id)
+  },
+  clear() {
+    localStorage.removeItem(COMERCIO_KEY)
+  },
+}
+
 api.interceptors.request.use((config) => {
   const token = tokenStorage.access
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  const comercioId = comercioStorage.id
+  if (comercioId) {
+    config.headers['X-Comercio-Id'] = comercioId
   }
   return config
 })

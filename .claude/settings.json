@@ -19,7 +19,29 @@
       "Bash(npm init *)",
       "Bash(npx playwright *)",
       "Bash(node -e \"const {chromium} = require\\('playwright'\\); console.log\\('ok', typeof chromium.launch\\)\")",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git rev-list *)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test core admin_saas -v 2)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test core admin_saas)",
+      "Bash(npx --yes chromium-cli --version)",
+      "Bash(command -v chromium-cli)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py seed_demo)",
+      "Bash(timeout 30 bash -c 'until curl -sf http://127.0.0.1:8000/api/schema/ >/dev/null 2>&1; do sleep 1; done')",
+      "Bash(timeout 40 bash -c 'until curl -sf http://127.0.0.1:5173/ >/dev/null 2>&1; do sleep 1; done')",
+      "Read(//tmp/**)",
+      "Bash(netstat -ano)",
+      "Bash(curl -sf http://localhost:5173/ -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -sf http://localhost:8000/api/schema/ -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(mkdir -p \"C:/Users/User/AppData/Local/Temp/claude/c--Users-User-Desktop-TRABAJITOD-Forrajeria-La-petrona/0c4f2a1a-a31b-4089-a3e0-b507ba4e0c85/scratchpad/pw\")",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(mkdir -p screenshots)",
+      "Bash(node check.js)",
+      "Bash(cat /tmp/kubo_backend.log 2>&1 | tail -30)",
+      "Bash(node check2.js)",
+      "Bash(node check3.js)",
+      "Bash(taskkill //F //PID 29036)",
+      "Bash(taskkill //F //PID 28288)",
+      "Bash(taskkill //F //PID 5036)"
     ]
   }
 }

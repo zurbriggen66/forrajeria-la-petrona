@@ -1,6 +1,6 @@
 import {
-  Home, ShoppingCart, Bot, Package, TrendingUp, Warehouse, Tag, ClipboardList,
-  FileText, BarChart3, Eye, FileCheck, Users, Receipt, IceCreamCone, Wallet,
+  Home, ShoppingCart, Package, TrendingUp, Warehouse, Tag, ClipboardList,
+  FileText, BarChart3, Eye, Users, Wallet,
   Shield, UserCog, Truck, PackageSearch, ShoppingBag, UserRound, Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -17,7 +17,6 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Inicio', path: '/home', icon: Home },
   { label: 'Punto de Venta', path: '/pos', icon: ShoppingCart },
-  { label: 'Kubobots', path: '/kubobots', icon: Bot },
   {
     label: 'Productos', path: '/productos', icon: Package,
     children: [
@@ -27,7 +26,6 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Historial de aumentos', path: '/productos/historial' },
     ],
   },
-  { label: 'Prod. Universal', path: '/productos-universal', icon: PackageSearch },
   {
     label: 'Inventario', path: '/inventario', icon: TrendingUp,
     children: [
@@ -55,10 +53,7 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: 'Verdad del Negocio', path: '/verdad-del-negocio', icon: Eye },
-  { label: 'Control Fiscal', path: '/control-fiscal', icon: FileCheck },
   { label: 'CRM', path: '/crm', icon: Users },
-  { label: 'Facturación', path: '/facturacion', icon: Receipt },
-  { label: 'Baldes', path: '/baldes', icon: IceCreamCone },
   {
     label: 'Finanzas', path: '/finanzas', icon: Wallet,
     children: [

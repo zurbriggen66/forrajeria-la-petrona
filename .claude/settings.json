@@ -41,7 +41,9 @@
       "Bash(node check3.js)",
       "Bash(taskkill //F //PID 29036)",
       "Bash(taskkill //F //PID 28288)",
-      "Bash(taskkill //F //PID 5036)"
+      "Bash(taskkill //F //PID 5036)",
+      "Bash(git status *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

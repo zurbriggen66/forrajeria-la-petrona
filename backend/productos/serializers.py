@@ -44,7 +44,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             "venta_por_peso", "unidad_medida", "plu_balanza",
             "precio_oferta", "oferta_activa",
             "modelo_nombre", "talle", "color",
-            "activo", "created_at", "updated_at",
+            "destacado", "activo", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "stock_bajo", "created_at", "updated_at"]
 

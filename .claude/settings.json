@@ -43,7 +43,15 @@
       "Bash(taskkill //F //PID 28288)",
       "Bash(taskkill //F //PID 5036)",
       "Bash(git status *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(xargs wc -l)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test productos)",
+      "Bash(timeout 30 bash -c 'until curl -sf http://localhost:8000/api/schema/ >/dev/null 2>&1; do sleep 1; done')",
+      "Bash(timeout 40 bash -c 'until curl -sf http://localhost:5173/ >/dev/null 2>&1; do sleep 1; done')",
+      "Bash(../backend_venv/Scripts/python.exe manage.py shell -c \"from productos.models import Producto; print\\(Producto.objects.filter\\(destacado=True\\).count\\(\\)\\)\")",
+      "Bash(../backend_venv/Scripts/python.exe manage.py shell -c ' *)",
+      "Bash(node check_pos2.js)",
+      "Bash(node check_cart_table.js)"
     ]
   }
 }

@@ -53,6 +53,7 @@ export interface Producto {
   modelo_nombre: string
   talle: string
   color: string
+  destacado: boolean
   activo: boolean
   created_at: string
   updated_at: string

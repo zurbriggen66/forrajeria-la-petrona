@@ -30,6 +30,7 @@ function emptyForm(): ProductoInput {
     modelo_nombre: '',
     talle: '',
     color: '',
+    destacado: false,
     activo: true,
   }
 }
@@ -206,6 +207,16 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
             </div>
           )}
         </section>
+
+        <label className="flex items-center gap-2 text-sm text-text">
+          <input
+            type="checkbox"
+            checked={form.destacado ?? false}
+            onChange={(e) => set('destacado', e.target.checked)}
+            className="accent-accent"
+          />
+          Destacado — aparece en los accesos rápidos de Venta
+        </label>
 
         {form.categoria === 'Indumentaria' && (
           <section className="grid grid-cols-3 gap-4 rounded-lg border border-border bg-surface-2/50 p-4">

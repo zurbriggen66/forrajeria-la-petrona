@@ -9,6 +9,19 @@ import type { Cliente } from './types'
 
 const CUENTA_CORRIENTE = 'cuenta_corriente'
 
+/** Montos de "billete rápido" para no tener que tipear el efectivo recibido:
+ * el total exacto, más los próximos redondos hacia arriba (múltiplos de
+ * 1.000/5.000/10.000) — lo que un cliente plausiblemente entrega en mano. */
+function sugerenciasEfectivo(total: number): number[] {
+  if (total <= 0) return []
+  const sugeridos = new Set<number>([total])
+  for (const paso of [1000, 5000, 10000]) {
+    const candidato = Math.ceil(total / paso) * paso
+    if (candidato > total) sugeridos.add(candidato)
+  }
+  return [...sugeridos].sort((a, b) => a - b).slice(0, 4)
+}
+
 export interface DatosCobro {
   cliente: Cliente | null
   cuentaPagoId: string
@@ -88,16 +101,27 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         </option>
       </Select>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Input id="descuento" label="Descuento $" type="number" min="0" step="0.01" value={descuento} onChange={(e) => setDescuento(e.target.value)} />
-        <Input id="recargo" label="Recargo $" type="number" min="0" step="0.01" value={recargoMonto} onChange={(e) => setRecargoMonto(e.target.value)} />
-      </div>
-
       {esEfectivo && (
-        <Input
-          id="efectivo-recibido" label="Efectivo recibido" type="number" min="0" step="0.01"
-          value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)}
-        />
+        <div className="flex flex-col gap-1.5">
+          <Input
+            id="efectivo-recibido" label="Efectivo recibido" type="number" min="0" step="0.01"
+            value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)}
+          />
+          {total > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {sugerenciasEfectivo(total).map((monto) => (
+                <button
+                  key={monto}
+                  type="button"
+                  onClick={() => setEfectivoRecibido(String(monto))}
+                  className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs tabular-nums text-text-dim hover:border-accent/50 hover:text-text"
+                >
+                  {monto === total ? 'Exacto' : formatMoney(monto)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {esCuentaCorriente && disponibleCredito !== null && (
@@ -106,12 +130,29 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         </p>
       )}
 
-      <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
-        <div className="flex items-center justify-between text-sm text-text-dim">
-          <span>Subtotal</span><span className="tabular-nums">{formatMoney(subtotal)}</span>
+      <div className="mt-auto flex flex-col gap-3 border-t border-border pt-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Input id="descuento" label="Descuento $" type="number" min="0" step="0.01" value={descuento} onChange={(e) => setDescuento(e.target.value)} />
+          <Input id="recargo" label="Recargo $" type="number" min="0" step="0.01" value={recargoMonto} onChange={(e) => setRecargoMonto(e.target.value)} />
         </div>
-        <div className="flex items-center justify-between text-lg font-semibold text-text">
-          <span>Total</span><span className="tabular-nums">{formatMoney(total)}</span>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between text-sm text-text-dim">
+            <span>Subtotal</span><span className="tabular-nums">{formatMoney(subtotal)}</span>
+          </div>
+          {Number(descuento) > 0 && (
+            <div className="flex items-center justify-between text-sm text-danger">
+              <span>Descuento</span><span className="tabular-nums">−{formatMoney(descuento)}</span>
+            </div>
+          )}
+          {Number(recargoMonto) > 0 && (
+            <div className="flex items-center justify-between text-sm text-warning">
+              <span>Recargo</span><span className="tabular-nums">+{formatMoney(recargoMonto)}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-lg font-semibold text-text">
+            <span>Total</span><span className="tabular-nums">{formatMoney(total)}</span>
+          </div>
         </div>
         {vuelto !== null && (
           <div className="flex items-center justify-between text-sm text-accent-2">

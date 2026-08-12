@@ -16,7 +16,7 @@ export interface NavItem {
 // y las capturas de referencia (capturas/__home.png).
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Inicio', path: '/home', icon: Home },
-  { label: 'Punto de Venta', path: '/pos', icon: ShoppingCart },
+  { label: 'Venta', path: '/pos', icon: ShoppingCart },
   {
     label: 'Productos', path: '/productos', icon: Package,
     children: [

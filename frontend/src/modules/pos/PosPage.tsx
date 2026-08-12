@@ -8,6 +8,7 @@ import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
 import { ProductSearch } from './ProductSearch'
+import { QuickProducts } from './QuickProducts'
 import { TicketModal, type TicketData } from './TicketModal'
 import { useCatalogoPOS } from './useCatalogoPOS'
 import { useOfflineSync } from './useOfflineSync'
@@ -129,8 +130,9 @@ export function PosPage() {
 
       <div className="flex flex-1 gap-4 overflow-hidden">
         <div className="flex flex-1 flex-col gap-3">
+          <QuickProducts productos={productos} onAgregar={agregarProducto} />
           <ProductSearch productos={productos} onAgregar={agregarProducto} />
-          <Cart items={cart} onCambiarCantidad={cambiarCantidad} onQuitar={quitarProducto} />
+          <Cart items={cart} onCambiarCantidad={cambiarCantidad} onQuitar={quitarProducto} onVaciar={() => setCart([])} />
         </div>
 
         <PaymentPanel

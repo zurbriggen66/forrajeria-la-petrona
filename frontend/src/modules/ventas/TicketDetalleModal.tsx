@@ -51,7 +51,7 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
         <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2 p-3 font-mono text-sm">
           {venta.items.map((item) => (
             <div key={item.id} className="flex justify-between">
-              <span className="text-text-dim">{item.cantidad}× {item.producto_nombre ?? 'Producto'}</span>
+              <span className="text-text-dim">{Number(item.cantidad)}× {item.producto_nombre ?? 'Producto'}</span>
               <span className="tabular-nums text-text">{formatMoney(item.subtotal)}</span>
             </div>
           ))}
@@ -59,6 +59,17 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
             <span>Total</span>
             <span className="tabular-nums text-accent">{formatMoney(venta.total)}</span>
           </div>
+          {venta.pagos.length > 1 && (
+            <div className="mt-1 flex flex-col gap-0.5 border-t border-border pt-2 text-xs">
+              <span className="text-text-dim">Pago mixto</span>
+              {venta.pagos.map((pago) => (
+                <div key={pago.id} className="flex justify-between">
+                  <span className="text-text-dim">· {pago.cuenta_pago_nombre ?? 'Efectivo'}</span>
+                  <span className="tabular-nums text-text">{formatMoney(pago.monto)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {venta.vuelto && Number(venta.vuelto) > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-text-dim">Vuelto</span>

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { FLAT_ROUTES, NAV_ITEMS } from '../router/navigation'
 import { Button } from '../components/ui/Button'
 import { useToast } from '../context/ToastContext'
+import { SucursalSwitcher } from './SucursalSwitcher'
 
 export function Topbar() {
   const location = useLocation()
@@ -20,10 +21,13 @@ export function Topbar() {
         {Icon && <Icon size={20} className="text-accent" />}
         {current?.label ?? 'TIENDA-IA'}
       </h1>
-      <Button variant="secondary" onClick={() => toast('Actualizado')}>
-        <RefreshCw size={14} />
-        Actualizar
-      </Button>
+      <div className="flex items-center gap-3">
+        <SucursalSwitcher />
+        <Button variant="secondary" onClick={() => toast('Actualizado')}>
+          <RefreshCw size={14} />
+          Actualizar
+        </Button>
+      </div>
     </header>
   )
 }

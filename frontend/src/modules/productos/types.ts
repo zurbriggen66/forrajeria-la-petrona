@@ -47,7 +47,9 @@ export interface Producto {
   stock_bajo: boolean
   venta_por_peso: boolean
   unidad_medida: string
-  plu_balanza: string
+  precio_bolsa: string | null
+  bolsa_kg: string | null
+  stock_en_bolsas: boolean
   precio_oferta: string | null
   oferta_activa: boolean
   modelo_nombre: string

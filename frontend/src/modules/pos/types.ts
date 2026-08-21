@@ -1,6 +1,12 @@
 export interface VentaItemInput {
   producto: string
   cantidad: string
+  es_bolsa?: boolean
+}
+
+export interface VentaPagoInput {
+  cuenta_pago: string | null
+  monto: string
 }
 
 export interface VentaInput {
@@ -8,6 +14,8 @@ export interface VentaInput {
   items: VentaItemInput[]
   cliente?: string | null
   cuenta_pago?: string | null
+  /** Desglose del cobro mixto. Ausente = cobro con un solo medio. */
+  pagos?: VentaPagoInput[]
   metodo_pago?: string
   monto_efectivo?: string
   monto_tarjeta?: string
@@ -31,6 +39,13 @@ export interface VentaItemResult {
   subtotal: string
 }
 
+export interface VentaPagoResult {
+  id: string
+  cuenta_pago: string | null
+  cuenta_pago_nombre: string | null
+  monto: string
+}
+
 export interface VentaResult {
   id: string
   numero_ticket: number
@@ -52,6 +67,14 @@ export interface VentaResult {
   anulada: boolean
   created_at: string
   items: VentaItemResult[]
+  pagos: VentaPagoResult[]
+  facturado: boolean
+  cae: string
+  cae_vencimiento: string | null
+  tipo_factura: string
+  numero_factura: string
+  punto_venta_factura: string
+  qr_url: string | null
 }
 
 export interface CuentaPago {
@@ -83,6 +106,9 @@ export interface CartItem {
     venta_por_peso: boolean
     unidad_medida: string
     stock: string
+    precio_bolsa: string | null
+    bolsa_kg: string | null
   }
   cantidad: string
+  esBolsa: boolean
 }

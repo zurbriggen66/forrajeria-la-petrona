@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Pencil, Receipt, UserPlus, Wallet } from 'lucide-react'
+import { Loader2, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { Modal } from '../../components/ui/Modal'
@@ -14,6 +14,7 @@ import {
   useAsignacionesCliente,
   useAsignarVendedor,
   useDesactivarAsignacion,
+  useEliminarMovimientoCliente,
   useMovimientosCliente,
 } from './api'
 import { ClienteFormModal } from './ClienteFormModal'
@@ -34,6 +35,12 @@ const LABEL_TIPO_MOVIMIENTO: Record<string, string> = {
   cargo: 'Cargo (venta fiada)',
   pago: 'Pago',
   ajuste: 'Ajuste',
+}
+
+const LABEL_MEDIO_PAGO: Record<string, string> = {
+  efectivo: 'Efectivo',
+  transferencia: 'Transferencia',
+  tarjeta: 'Tarjeta',
 }
 
 function AsignacionVendedor({ cliente }: { cliente: Cliente }) {
@@ -90,24 +97,55 @@ function AsignacionVendedor({ cliente }: { cliente: Cliente }) {
 }
 
 export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; onClose: () => void }) {
+  const { toast } = useToast()
   const [editando, setEditando] = useState(false)
   const [movimientoModo, setMovimientoModo] = useState<'pago' | 'ajuste' | null>(null)
+  const [movimientoEditando, setMovimientoEditando] = useState<ClienteMovimiento | null>(null)
 
   const { data: movimientos, isLoading: cargandoMovimientos } = useMovimientosCliente(cliente.id)
   const { data: ventasData, isLoading: cargandoVentas } = useVentas({ cliente: cliente.id })
+  const eliminarMovimiento = useEliminarMovimientoCliente(cliente.id)
 
   const disponible = Number(cliente.limite_credito) - Number(cliente.saldo_actual)
+
+  async function handleEliminar(m: ClienteMovimiento) {
+    if (!window.confirm('¿Borrar este movimiento? El saldo del cliente se recalcula solo.')) return
+    try {
+      await eliminarMovimiento.mutateAsync(m.id)
+      toast('Movimiento borrado')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo borrar el movimiento'), 'error')
+    }
+  }
 
   const columnasMovimientos: Column<ClienteMovimiento>[] = [
     { header: 'Fecha', render: (m) => formatFecha(m.created_at) },
     { header: 'Tipo', render: (m) => <span className={COLOR_TIPO_MOVIMIENTO[m.tipo] ?? ''}>{LABEL_TIPO_MOVIMIENTO[m.tipo] ?? m.tipo}</span> },
-    { header: 'Motivo', render: (m) => m.referencia || '—' },
+    {
+      header: 'Motivo',
+      render: (m) => m.tipo === 'pago'
+        ? [LABEL_MEDIO_PAGO[m.medio_pago] ?? null, m.referencia].filter(Boolean).join(' · ') || '—'
+        : m.referencia || '—',
+    },
     {
       header: 'Monto', className: 'tabular-nums text-right',
       render: (m) => (
         <span className={COLOR_TIPO_MOVIMIENTO[m.tipo] ?? ''}>
           {m.tipo === 'pago' ? '-' : '+'}{formatMoney(m.monto)}
         </span>
+      ),
+    },
+    {
+      header: '', className: 'text-right',
+      render: (m) => m.tipo === 'cargo' ? null : (
+        <div className="flex justify-end gap-2">
+          <button onClick={() => setMovimientoEditando(m)} aria-label="Corregir" className="text-text-dim hover:text-accent">
+            <Pencil size={13} />
+          </button>
+          <button onClick={() => handleEliminar(m)} aria-label="Borrar" className="text-text-dim hover:text-danger">
+            <Trash2 size={13} />
+          </button>
+        </div>
       ),
     },
   ]
@@ -179,6 +217,14 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
 
       {movimientoModo && (
         <ClienteMovimientoFormModal clienteId={cliente.id} tipo={movimientoModo} onClose={() => setMovimientoModo(null)} />
+      )}
+      {movimientoEditando && (
+        <ClienteMovimientoFormModal
+          clienteId={cliente.id}
+          tipo={movimientoEditando.tipo === 'pago' ? 'pago' : 'ajuste'}
+          movimiento={movimientoEditando}
+          onClose={() => setMovimientoEditando(null)}
+        />
       )}
     </Modal>
   )

@@ -72,6 +72,33 @@ export function useCrearMovimientoCliente(clienteId: string) {
   })
 }
 
+export function useEditarMovimientoCliente(clienteId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: { monto: string; referencia?: string; medio_pago?: string } }) => {
+      const { data } = await api.patch<ClienteMovimiento>(`/clientes/${clienteId}/movimientos/${id}/`, input)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cliente-movimientos', clienteId] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+    },
+  })
+}
+
+export function useEliminarMovimientoCliente(clienteId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/clientes/${clienteId}/movimientos/${id}/`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cliente-movimientos', clienteId] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+    },
+  })
+}
+
 export function useAsignacionesCliente(clienteId: string | undefined) {
   return useQuery({
     queryKey: ['cliente-asignaciones', clienteId],

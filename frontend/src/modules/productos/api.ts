@@ -39,7 +39,7 @@ export function useProductoSearch(query: string) {
     queryKey: ['productos-search', query],
     queryFn: async () => {
       const { data } = await api.get<Paginated<Producto>>('/productos/', {
-        params: { page_size: 8, search: query, ordering: 'nombre' },
+        params: { page_size: 8, search: query, activo: true, ordering: 'nombre' },
       })
       return data.results
     },
@@ -93,6 +93,19 @@ export function useUpdateProducto() {
     mutationFn: async ({ id, input }: { id: string; input: ProductoInput }) => {
       const { data } = await api.patch<Producto>(`/productos/${id}/`, input)
       return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productos'] })
+      queryClient.invalidateQueries({ queryKey: ['inventario-resumen'] })
+    },
+  })
+}
+
+export function useDeleteProducto() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/productos/${id}/`)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productos'] })

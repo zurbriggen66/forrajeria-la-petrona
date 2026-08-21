@@ -38,7 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function fetchMe() {
     const { data } = await api.get<Perfil>('/auth/me/')
     setUser(data)
-    if (!comercioStorage.id && data.comercios[0]) {
+    // La sucursal guardada puede haber quedado obsoleta (borrada, o el usuario
+    // ya no la opera) — sin esto, el header X-Comercio-Id sigue mandando un id
+    // inválido y el backend rechaza cada request con 403 para siempre.
+    const sigueSiendoValida = data.comercios.some((c) => c.id === comercioStorage.id)
+    if (!sigueSiendoValida && data.comercios[0]) {
       comercioStorage.set(data.comercios[0].id)
       setComercioActivoId(data.comercios[0].id)
     }

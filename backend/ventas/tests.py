@@ -5,8 +5,10 @@ idempotencia de la cola offline, aislamiento multi-tenant y fidelización.
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import models
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework import status
@@ -14,6 +16,8 @@ from rest_framework import status
 from caja.models import CajaMovimiento, CajaSesion, CuentaPago
 from clientes.models import Cliente
 from core.models import Comercio, UsuarioComercio
+from fiscal.afip import ErrorFiscal
+from fiscal.models import ComercioFiscalConfig, FiscalQueue
 from kubobots.models import KubobotsCliente
 from productos.models import Producto
 from .models import Venta
@@ -277,7 +281,13 @@ class VentaCuentaCorrienteTests(APITestCase):
     límite de crédito, y no contar como plata que entró a la caja."""
 
     def setUp(self):
-        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        # Los cargos de venta fiada disparan WhatsApp (ver clientes/views.py):
+        # se mockea acá para toda la clase, no test por test, así ningún test
+        # nuevo de venta fiada termina pegándole a un bot real por olvido.
+        self.mock_whatsapp = patch("clientes.views.enviar_whatsapp").start()
+        self.addCleanup(patch.stopall)
+
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)", telefono="1155550000")
         self.user = User.objects.create_user(username="cajero", password="testpass123")
         UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
         self.client.force_authenticate(user=self.user)
@@ -288,7 +298,7 @@ class VentaCuentaCorrienteTests(APITestCase):
             precio_venta=Decimal("200"), stock=Decimal("50"),
         )
         self.cliente = Cliente.objects.create(
-            comercio=self.comercio, nombre="Juan Fiado", limite_credito=Decimal("1000"),
+            comercio=self.comercio, nombre="Juan Fiado", celular="1155559999", limite_credito=Decimal("1000"),
         )
 
     def _vender_fiado(self, cantidad="1", monto_cuenta_corriente="200", cliente=None):
@@ -306,6 +316,11 @@ class VentaCuentaCorrienteTests(APITestCase):
         self.cliente.refresh_from_db()
         self.assertEqual(self.cliente.saldo_actual, Decimal("200.00"))
         self.assertFalse(CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="ingreso").exists())
+
+    def test_venta_fiada_avisa_por_whatsapp(self):
+        response = self._vender_fiado()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(self.mock_whatsapp.call_count, 2)
 
     def test_venta_parcialmente_fiada_solo_ingresa_a_caja_lo_cobrado(self):
         # total 200: 120 en efectivo, 80 a cuenta corriente
@@ -348,3 +363,385 @@ class VentaCuentaCorrienteTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.cliente.refresh_from_db()
         self.assertEqual(self.cliente.saldo_actual, Decimal("0.00"))
+
+
+class VentaPorBolsaTests(APITestCase):
+    """Un mismo producto por peso se puede vender suelto (por kg) o en bolsa
+    cerrada, a precios distintos, pero el stock es uno solo en kg (ver
+    ventas/views.py::_crear_venta) — este es el caso real de un cliente que
+    compra bolsas de 20kg y las vende tanto enteras como sueltas."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.alimento = Producto.objects.create(
+            comercio=self.comercio, nombre="Alimento Balanceado Perro",
+            precio_costo=Decimal("100"), precio_venta=Decimal("150"), stock=Decimal("100"),
+            venta_por_peso=True, unidad_medida="kg",
+            bolsa_kg=Decimal("20"), precio_bolsa=Decimal("2500"),
+        )
+
+    def test_vender_bolsa_y_kg_sueltos_en_la_misma_venta_descuenta_el_mismo_stock(self):
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [
+                {"producto": str(self.alimento.id), "cantidad": "1", "es_bolsa": True},
+                {"producto": str(self.alimento.id), "cantidad": "3", "es_bolsa": False},
+            ],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        # 1 bolsa a $2500 + 3kg a $150/kg = 2950
+        self.assertEqual(Decimal(response.data["total"]), Decimal("2950.00"))
+
+        self.alimento.refresh_from_db()
+        self.assertEqual(self.alimento.stock, Decimal("77.000"), "100kg - 20kg (bolsa) - 3kg (suelto)")
+
+        item_bolsa = Venta.objects.get(id=response.data["id"]).items.get(cantidad=Decimal("1.000"))
+        self.assertEqual(item_bolsa.precio_unitario, Decimal("2500.00"))
+        self.assertEqual(item_bolsa.peso_kg, Decimal("20.000"), "registra los kg reales descontados, no la cantidad de bolsas")
+        self.assertEqual(item_bolsa.costo_unitario, Decimal("2000.00"), "costo por kg (100) * kg por bolsa (20)")
+
+    def test_rechaza_bolsa_sin_stock_suficiente_en_kg(self):
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.alimento.id), "cantidad": "6", "es_bolsa": True}],  # 6*20=120kg > 100kg
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.alimento.refresh_from_db()
+        self.assertEqual(self.alimento.stock, Decimal("100.000"))
+
+    def test_rechaza_venta_por_bolsa_si_el_producto_no_la_tiene_configurada(self):
+        suelto = Producto.objects.create(
+            comercio=self.comercio, nombre="Semilla suelta", precio_venta=Decimal("50"),
+            stock=Decimal("100"), venta_por_peso=True, unidad_medida="kg",
+        )
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(suelto.id), "cantidad": "1", "es_bolsa": True}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_anular_venta_por_bolsa_repone_los_kg_reales_no_la_cantidad_de_bolsas(self):
+        venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.alimento.id), "cantidad": "2", "es_bolsa": True}],
+        }, format="json").data
+        self.alimento.refresh_from_db()
+        self.assertEqual(self.alimento.stock, Decimal("60.000"), "100kg - 2 bolsas * 20kg")
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Devolución"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+        self.alimento.refresh_from_db()
+        self.assertEqual(
+            self.alimento.stock, Decimal("100.000"),
+            "tiene que devolver 40kg (2 bolsas), no 2 (la cantidad de bolsas)",
+        )
+
+
+class VentaFacturarTests(APITestCase):
+    """Fase 7: pedir el CAE a ARCA para una venta ya cobrada. Nunca le pega a
+    ARCA de verdad en los tests — se mockea fiscal.afip.solicitar_cae."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.gaseosa = Producto.objects.create(
+            comercio=self.comercio, nombre="Gaseosa", precio_costo=Decimal("100"),
+            precio_venta=Decimal("200"), stock=Decimal("50"),
+        )
+        self.venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+        }, format="json").data
+
+    def _facturar(self):
+        return self.client.post(f"/api/ventas/{self.venta['id']}/facturar/")
+
+    def test_sin_config_fiscal_no_se_puede_facturar(self):
+        response = self._facturar()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("ventas.views.solicitar_cae")
+    def test_facturar_exitoso_guarda_cae_en_la_venta_y_en_la_cola(self, mock_solicitar_cae):
+        ComercioFiscalConfig.objects.create(
+            comercio=self.comercio, cuit="20111111112", punto_venta="1",
+            condicion_iva="monotributo", cert_ref="test", activo=True,
+        )
+        mock_solicitar_cae.return_value = {
+            "cae": "75319871239871", "cae_vencimiento": "20260901",
+            "numero": 42, "punto_vta": 1, "tipo_cbte": 11,
+        }
+
+        response = self._facturar()
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data["facturado"])
+        self.assertEqual(response.data["cae"], "75319871239871")
+        self.assertEqual(response.data["numero_factura"], "42")
+
+        cola = FiscalQueue.objects.get(venta_id=self.venta["id"])
+        self.assertEqual(cola.status, "ok")
+        self.assertEqual(cola.cae, "75319871239871")
+
+    @patch("ventas.views.solicitar_cae")
+    def test_rechazo_de_arca_deja_la_cola_en_error_y_la_venta_sin_facturar(self, mock_solicitar_cae):
+        ComercioFiscalConfig.objects.create(
+            comercio=self.comercio, cuit="20111111112", punto_venta="1",
+            condicion_iva="monotributo", cert_ref="test", activo=True,
+        )
+        mock_solicitar_cae.side_effect = ErrorFiscal("CUIT del comprador inválido")
+
+        response = self._facturar()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.venta_obj = Venta.objects.get(id=self.venta["id"])
+        self.assertFalse(self.venta_obj.facturado)
+
+        cola = FiscalQueue.objects.get(venta_id=self.venta["id"])
+        self.assertEqual(cola.status, "error")
+        self.assertIn("CUIT del comprador inválido", cola.error_msg)
+
+    @patch("ventas.views.solicitar_cae")
+    def test_se_puede_reintentar_despues_de_un_error(self, mock_solicitar_cae):
+        ComercioFiscalConfig.objects.create(
+            comercio=self.comercio, cuit="20111111112", punto_venta="1",
+            condicion_iva="monotributo", cert_ref="test", activo=True,
+        )
+        mock_solicitar_cae.side_effect = ErrorFiscal("ARCA no responde")
+        self._facturar()
+
+        mock_solicitar_cae.side_effect = None
+        mock_solicitar_cae.return_value = {
+            "cae": "75319871239871", "cae_vencimiento": "20260901",
+            "numero": 1, "punto_vta": 1, "tipo_cbte": 11,
+        }
+        response = self._facturar()
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(FiscalQueue.objects.filter(venta_id=self.venta["id"]).count(), 1, "reusa la misma fila de cola, no acumula")
+
+    def test_no_se_puede_facturar_una_venta_anulada(self):
+        self.client.post(f"/api/ventas/{self.venta['id']}/anular/", {"motivo": "x"}, format="json")
+        response = self._facturar()
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HistorialSinNMasUnoTests(APITestCase):
+    """El historial no puede hacer más consultas SQL porque haya más ventas.
+
+    Antes de optimizar, listar 60 ventas disparaba ~450 consultas (una por
+    cliente/vendedor/cuenta de pago de cada venta, y otra por el producto de
+    cada ítem). El test compara el costo de listar pocas ventas contra el de
+    listar muchas: si alguien saca un select_related/prefetch_related, el
+    número crece con los datos y esto falla.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno_perf", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+        self.cuenta = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        self.productos = [
+            Producto.objects.create(
+                comercio=self.comercio, nombre=f"Producto {i}",
+                precio_costo=Decimal("100"), precio_venta=Decimal("200"), stock=Decimal("9999"),
+            )
+            for i in range(5)
+        ]
+
+    def _crear_ventas(self, cantidad):
+        from .models import VentaItem
+
+        for n in range(cantidad):
+            cliente = Cliente.objects.create(comercio=self.comercio, nombre=f"Cliente {uuid.uuid4()}")
+            venta = Venta.objects.create(
+                comercio=self.comercio, cliente=cliente, cuenta_pago=self.cuenta,
+                total=Decimal("1000"), metodo_pago="efectivo",
+            )
+            VentaItem.objects.bulk_create([
+                VentaItem(
+                    venta=venta, producto=p, cantidad=1,
+                    precio_unitario=Decimal("200"), costo_unitario=Decimal("100"),
+                    subtotal=Decimal("200"),
+                )
+                for p in self.productos
+            ])
+
+    def _consultas_al_listar(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/ventas/", {"page_size": 50})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return len(ctx.captured_queries)
+
+    def test_listar_mas_ventas_no_hace_mas_consultas(self):
+        self._crear_ventas(3)
+        con_pocas = self._consultas_al_listar()
+
+        self._crear_ventas(25)
+        con_muchas = self._consultas_al_listar()
+
+        self.assertEqual(
+            con_pocas, con_muchas,
+            f"El historial escala con los datos: {con_pocas} consultas con 3 ventas "
+            f"y {con_muchas} con 28. Falta select_related/prefetch_related.",
+        )
+
+
+class VentaPagoMixtoTests(APITestCase):
+    """Cobrar una venta con varios medios a la vez.
+
+    Caso de referencia: $48.000 = $30.000 efectivo + $8.000 transferencia +
+    $10.000 débito. Lo importante es que cada contenedor de caja reciba
+    exactamente su parte, si no el arqueo del turno cierra con diferencia.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero_mixto", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.efectivo = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        self.transferencia = CuentaPago.objects.create(comercio=self.comercio, nombre="Transferencia", tipo="transferencia")
+        self.debito = CuentaPago.objects.create(comercio=self.comercio, nombre="Débito", tipo="tarjeta")
+
+        # Un producto de $48.000 para que el total dé redondo.
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Bolsa grande", precio_costo=Decimal("20000"),
+            precio_venta=Decimal("48000"), stock=Decimal("100"),
+        )
+
+    def _vender(self, pagos, **extra):
+        payload = {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.producto.id), "cantidad": "1"}],
+            "pagos": pagos,
+        }
+        payload.update(extra)
+        return self.client.post("/api/ventas/", payload, format="json")
+
+    def test_reparte_el_cobro_entre_los_tres_medios(self):
+        response = self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "30000"},
+            {"cuenta_pago": str(self.transferencia.id), "monto": "8000"},
+            {"cuenta_pago": str(self.debito.id), "monto": "10000"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("48000.00"))
+        self.assertEqual(response.data["metodo_pago"], "mixto")
+
+        pagos = {p["cuenta_pago_nombre"]: Decimal(p["monto"]) for p in response.data["pagos"]}
+        self.assertEqual(pagos, {
+            "Efectivo": Decimal("30000.00"),
+            "Transferencia": Decimal("8000.00"),
+            "Débito": Decimal("10000.00"),
+        })
+
+    def test_cada_contenedor_de_caja_recibe_su_parte(self):
+        self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "30000"},
+            {"cuenta_pago": str(self.transferencia.id), "monto": "8000"},
+            {"cuenta_pago": str(self.debito.id), "monto": "10000"},
+        ])
+        movimientos = {
+            m.cuenta_id: m.monto
+            for m in CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="ingreso")
+        }
+        self.assertEqual(movimientos[self.efectivo.id], Decimal("30000.00"))
+        self.assertEqual(movimientos[self.transferencia.id], Decimal("8000.00"))
+        self.assertEqual(movimientos[self.debito.id], Decimal("10000.00"))
+
+    def test_completa_los_campos_por_tipo_de_medio(self):
+        response = self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "30000"},
+            {"cuenta_pago": str(self.transferencia.id), "monto": "8000"},
+            {"cuenta_pago": str(self.debito.id), "monto": "10000"},
+        ])
+        self.assertEqual(Decimal(response.data["monto_efectivo"]), Decimal("30000.00"))
+        self.assertEqual(Decimal(response.data["monto_transferencia"]), Decimal("8000.00"))
+        self.assertEqual(Decimal(response.data["monto_tarjeta"]), Decimal("10000.00"))
+
+    def test_rechaza_si_los_pagos_no_suman_el_total(self):
+        response = self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "30000"},
+            {"cuenta_pago": str(self.transferencia.id), "monto": "8000"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("pagos", response.data)
+        self.assertEqual(Venta.objects.count(), 0, "no se registra una venta descuadrada")
+        self.assertEqual(CajaMovimiento.objects.count(), 0)
+
+    def test_rechaza_si_los_pagos_se_pasan_del_total(self):
+        response = self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "48000"},
+            {"cuenta_pago": str(self.debito.id), "monto": "5000"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Venta.objects.count(), 0)
+
+    def test_mixto_combinado_con_cuenta_corriente(self):
+        """Lo fiado no es plata que entró: los pagos cubren sólo el resto."""
+        cliente = Cliente.objects.create(
+            comercio=self.comercio, nombre="Fiado SA", limite_credito=Decimal("100000"),
+        )
+        response = self._vender(
+            [
+                {"cuenta_pago": str(self.efectivo.id), "monto": "20000"},
+                {"cuenta_pago": str(self.debito.id), "monto": "8000"},
+            ],
+            cliente=str(cliente.id),
+            monto_cuenta_corriente="20000",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        entrado = CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="ingreso").aggregate(
+            t=models.Sum("monto")
+        )["t"]
+        self.assertEqual(entrado, Decimal("28000.00"), "sólo entra lo cobrado, no lo fiado")
+        cliente.refresh_from_db()
+        self.assertEqual(cliente.saldo_actual, Decimal("20000.00"))
+
+    def test_anular_devuelve_a_cada_cuenta_lo_suyo(self):
+        venta = self._vender([
+            {"cuenta_pago": str(self.efectivo.id), "monto": "30000"},
+            {"cuenta_pago": str(self.transferencia.id), "monto": "8000"},
+            {"cuenta_pago": str(self.debito.id), "monto": "10000"},
+        ]).data
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "error de carga"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+        for cuenta, esperado in ((self.efectivo, "30000.00"), (self.transferencia, "8000.00"), (self.debito, "10000.00")):
+            egreso = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="egreso", cuenta=cuenta)
+            self.assertEqual(egreso.monto, Decimal(esperado))
+            # Cada contenedor vuelve a cero: ingreso y egreso se cancelan.
+            neto = (
+                CajaMovimiento.objects.filter(sesion=self.caja_sesion, cuenta=cuenta, tipo="ingreso")
+                .aggregate(t=models.Sum("monto"))["t"]
+                - egreso.monto
+            )
+            self.assertEqual(neto, Decimal("0"))
+
+    def test_sin_pagos_sigue_funcionando_como_antes(self):
+        """La cola offline puede tener ventas guardadas con el formato viejo."""
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.producto.id), "cantidad": "1"}],
+            "cuenta_pago": str(self.debito.id),
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        movimiento = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="ingreso")
+        self.assertEqual(movimiento.cuenta_id, self.debito.id)
+        self.assertEqual(movimiento.monto, Decimal("48000.00"))

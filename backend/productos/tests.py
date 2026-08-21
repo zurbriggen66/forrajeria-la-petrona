@@ -9,7 +9,8 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 
 from core.models import Comercio, Perfil, UsuarioComercio
-from .models import AjustePrecio, Combo, Producto, ProductoUniversal
+from ventas.models import Venta, VentaItem
+from .models import AjustePrecio, Combo, ComboItem, Producto, ProductoUniversal
 
 User = get_user_model()
 
@@ -194,3 +195,43 @@ class ComboTests(APITestCase):
         combo = Combo.objects.get(id=response.data["id"])
         self.assertEqual(combo.items.count(), 2)
         self.assertEqual(combo.comercio_id, self.comercio.id)
+
+
+class EliminarProductoTests(APITestCase):
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+    def test_borra_de_verdad_un_producto_sin_historial(self):
+        producto = Producto.objects.create(comercio=self.comercio, nombre="Sin ventas", precio_venta=100)
+        response = self.client.delete(f"/api/productos/{producto.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Producto.objects.filter(id=producto.id).exists())
+
+    def test_desactiva_en_vez_de_borrar_un_producto_con_ventas(self):
+        producto = Producto.objects.create(comercio=self.comercio, nombre="Con ventas", precio_venta=100)
+        venta = Venta.objects.create(comercio=self.comercio, total=100)
+        VentaItem.objects.create(venta=venta, producto=producto, cantidad=1, precio_unitario=100, subtotal=100)
+
+        response = self.client.delete(f"/api/productos/{producto.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        producto.refresh_from_db()
+        self.assertFalse(producto.activo)
+        # El ticket viejo sigue apuntando al producto (no se pierde el nombre).
+        venta_item = VentaItem.objects.get(venta=venta)
+        self.assertEqual(venta_item.producto_id, producto.id)
+
+    def test_desactiva_en_vez_de_borrar_un_producto_en_un_combo(self):
+        producto = Producto.objects.create(comercio=self.comercio, nombre="En combo", precio_venta=100)
+        combo = Combo.objects.create(comercio=self.comercio, nombre="Combo", precio=100)
+        ComboItem.objects.create(combo=combo, producto=producto, cantidad=1)
+
+        response = self.client.delete(f"/api/productos/{producto.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        producto.refresh_from_db()
+        self.assertFalse(producto.activo)
+        self.assertEqual(combo.items.count(), 1)

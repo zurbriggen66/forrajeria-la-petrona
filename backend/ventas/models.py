@@ -18,7 +18,10 @@ class Venta(TenantModel):
     descuento = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     recargo_monto = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     comision_monto = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    metodo_pago = models.CharField(max_length=40, blank=True)  # efectivo|tarjeta|transferencia|mixto
+    # Resumen legible del cobro. El desglose real vive en VentaPago (una fila
+    # por medio usado); acá queda "efectivo", el nombre de la cuenta, o
+    # "mixto" cuando se pagó con más de una.
+    metodo_pago = models.CharField(max_length=40, blank=True)
     monto_efectivo = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_tarjeta = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_transferencia = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -66,17 +69,58 @@ class VentaItem(BaseModel):
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
 
+class VentaPago(BaseModel):
+    """Una línea del cobro: cuánto entró por cada medio de pago.
+
+    Existe para el pago mixto (ej. $48.000 = $30.000 efectivo + $8.000
+    transferencia + $10.000 débito). Una fila por cuenta usada, porque cada
+    una tiene que generar su propio CajaMovimiento: el arqueo por contenedor
+    se calcula sobre `CajaMovimiento.cuenta`, así que meter el total en una
+    sola cuenta descuadraría el cierre de caja.
+
+    La parte fiada NO va acá: no es plata que entró, va en
+    `Venta.monto_cuenta_corriente`.
+    """
+
+    venta = models.ForeignKey(Venta, on_delete=models.CASCADE, related_name="pagos")
+    cuenta_pago = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
+    monto = models.DecimalField(max_digits=14, decimal_places=2)
+
+
 class Presupuesto(TenantModel):
+    """Cotización para un cliente: qué se le ofrece y a qué precio, sin mover
+    stock ni caja todavía — eso pasa recién si el cliente acepta y se carga
+    la venta en el POS (mismo criterio que Reparto)."""
+
+    ESTADOS = [
+        ("pendiente", "pendiente"),
+        ("aprobado", "aprobado"),
+        ("rechazado", "rechazado"),
+        ("vencido", "vencido"),
+    ]
+
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True)
+    cliente_nombre = models.CharField(max_length=200, blank=True)
     numero = models.CharField(max_length=40, blank=True)
-    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    estado = models.CharField(max_length=40, default="pendiente")
+    notas = models.CharField(max_length=300, blank=True)
+    estado = models.CharField(max_length=20, choices=ESTADOS, default="pendiente")
     validez = models.DateField(null=True, blank=True)
+    # Totales: se recalculan siempre en el servidor a partir de los ítems.
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    descuento = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        indexes = [models.Index(fields=["comercio", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.numero or self.id} — {self.cliente_nombre}"
 
 
 class PresupuestoItem(BaseModel):
     presupuesto = models.ForeignKey(Presupuesto, on_delete=models.CASCADE, related_name="items")
     producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, blank=True)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3, default=1)
+    es_bolsa = models.BooleanField(default=False)
     precio_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)

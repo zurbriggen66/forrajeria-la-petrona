@@ -21,7 +21,12 @@ class CompraViewSet(TenantViewSet):
     compra como nuevo precio_costo del producto, y actualiza la cuenta
     corriente del proveedor (+ la caja, si se marca pagada al toque)."""
 
-    queryset = Compra.objects.all().prefetch_related("items").order_by("-fecha", "-created_at")
+    queryset = (
+        Compra.objects.all()
+        .select_related("proveedor")
+        .prefetch_related("items__producto")
+        .order_by("-fecha", "-created_at")
+    )
     filterset_fields = ["proveedor", "pagado"]
 
     def get_serializer_class(self):

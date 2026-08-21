@@ -13,12 +13,21 @@ import type { Cliente } from './types'
 export function Clientes() {
   const [search, setSearch] = useState('')
   const [activo, setActivo] = useState<'todos' | 'activos' | 'inactivos'>('activos')
+  const [deuda, setDeuda] = useState<'todos' | 'deben' | 'al_dia'>('todos')
   const [showForm, setShowForm] = useState(false)
   const [seleccionadaId, setSeleccionadaId] = useState<string | null>(null)
 
   const { data, isLoading } = useClientes({
     search: search || undefined,
     ...(activo === 'activos' ? { activo: true } : activo === 'inactivos' ? { activo: false } : {}),
+  })
+  // El filtro de deuda se aplica en el cliente: la lista ya viene completa
+  // (page_size 100) y saldo_actual no es un campo booleano que valga la pena
+  // sumar como filtro de la API.
+  const clientesFiltrados = (data?.results ?? []).filter((c) => {
+    if (deuda === 'deben') return Number(c.saldo_actual) > 0
+    if (deuda === 'al_dia') return Number(c.saldo_actual) <= 0
+    return true
   })
   // Derivado de la lista en vivo (no una copia local): así, si se edita el
   // cliente desde la ficha, el modal ya abierto muestra los datos frescos.
@@ -52,6 +61,11 @@ export function Clientes() {
             <option value="inactivos">Inactivos</option>
             <option value="todos">Todos</option>
           </Select>
+          <Select id="f-deuda" label="Cuenta corriente" value={deuda} onChange={(e) => setDeuda(e.target.value as typeof deuda)}>
+            <option value="todos">Todos</option>
+            <option value="deben">Deben</option>
+            <option value="al_dia">Al día</option>
+          </Select>
         </div>
         <Button onClick={() => setShowForm(true)}><Plus size={15} /> Nuevo cliente</Button>
       </div>
@@ -67,7 +81,7 @@ export function Clientes() {
       ) : (
         <Table
           columns={columns}
-          rows={data?.results ?? []}
+          rows={clientesFiltrados}
           rowKey={(c) => c.id}
           emptyMessage="No hay clientes para este filtro."
           onRowClick={(c) => setSeleccionadaId(c.id)}

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { AlertTriangle, Boxes, Loader2, PackageX, Wallet } from 'lucide-react'
+import { AlertTriangle, Boxes, Loader2, Package, PackageX, Scale, Wallet } from 'lucide-react'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { Table, type Column } from '../../components/ui/Table'
 import { formatMoney } from '../../lib/format'
 import { useProductos } from '../productos/api'
+import { formatCantidadStock } from '../productos/stock'
 import type { Producto } from '../productos/types'
 import { useInventarioResumen } from './api'
 
@@ -15,30 +16,84 @@ const TABS: { key: Filtro; label: string }[] = [
   { key: 'sin_stock', label: 'Sin Stock' },
 ]
 
+function EstadoPill({ stock, stockBajo }: { stock: number; stockBajo: boolean }) {
+  if (stock <= 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-danger/40 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+        <PackageX size={12} /> Sin stock
+      </span>
+    )
+  }
+  if (stockBajo) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+        <AlertTriangle size={12} /> Stock bajo
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-accent-2/40 bg-accent-2/10 px-2 py-0.5 text-xs font-medium text-accent-2">
+      OK
+    </span>
+  )
+}
+
+/** Barra relativa al mínimo (no a un "máximo" que no existe en el modelo):
+ * a 2x el mínimo ya se ve llena, total = a un vistazo se nota qué tan lejos
+ * está cada producto del punto de reposición. */
+function BarraStock({ stock, minimo }: { stock: number; minimo: number }) {
+  if (minimo <= 0) return null
+  const pct = Math.max(4, Math.min(100, (stock / (minimo * 2)) * 100))
+  const color = stock <= 0 ? 'bg-danger' : stock <= minimo ? 'bg-warning' : 'bg-accent-2'
+  return (
+    <div className="mt-1.5 h-1 w-20 overflow-hidden rounded-full bg-surface-2">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
 export function EstadoInventario() {
   const [filtro, setFiltro] = useState<Filtro>('todos')
   const { data: resumen, isLoading: loadingResumen } = useInventarioResumen()
   const { data: productos, isLoading: loadingProductos } = useProductos(
-    filtro === 'todos' ? { ordering: 'nombre' } : { stock_status: filtro, ordering: 'nombre' },
+    filtro === 'todos'
+      ? { activo: true, ordering: 'nombre' }
+      : { activo: true, stock_status: filtro, ordering: 'stock' },
   )
 
   const columns: Column<Producto>[] = [
-    { header: 'Producto', render: (p) => p.nombre },
-    { header: 'Categoría', render: (p) => p.categoria || '—' },
-    { header: 'Stock', render: (p) => `${p.stock}${p.venta_por_peso ? ` ${p.unidad_medida}` : ''}`, className: 'tabular-nums' },
-    { header: 'Mínimo', render: (p) => p.stock_minimo, className: 'tabular-nums' },
     {
-      header: 'Estado',
-      render: (p) =>
-        Number(p.stock) <= 0 ? (
-          <span className="inline-flex items-center gap-1 text-danger"><PackageX size={13} /> Sin stock</span>
-        ) : p.stock_bajo ? (
-          <span className="inline-flex items-center gap-1 text-warning"><AlertTriangle size={13} /> Stock bajo</span>
-        ) : (
-          <span className="text-accent-2">OK</span>
-        ),
+      header: 'Producto',
+      render: (p) => (
+        <div className="flex items-start gap-2">
+          {p.venta_por_peso ? (
+            <Scale size={14} className="mt-0.5 shrink-0 text-text-dim" />
+          ) : (
+            <Package size={14} className="mt-0.5 shrink-0 text-text-dim" />
+          )}
+          <div>
+            <div className="font-medium text-text">{p.nombre}</div>
+            {p.categoria && (
+              <span className="mt-1 inline-block rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-dim">
+                {p.categoria}
+              </span>
+            )}
+          </div>
+        </div>
+      ),
     },
-    { header: 'Valorizado (costo)', render: (p) => formatMoney(Number(p.stock) * Number(p.precio_costo)), className: 'tabular-nums' },
+    {
+      header: 'Stock',
+      render: (p) => (
+        <div>
+          <span className="tabular-nums text-text">{formatCantidadStock(p.stock, p)}</span>
+          <BarraStock stock={Number(p.stock)} minimo={Number(p.stock_minimo)} />
+        </div>
+      ),
+    },
+    { header: 'Mínimo', render: (p) => formatCantidadStock(p.stock_minimo, p), className: 'tabular-nums text-text-dim' },
+    { header: 'Estado', render: (p) => <EstadoPill stock={Number(p.stock)} stockBajo={p.stock_bajo} /> },
+    { header: 'Valorizado (costo)', render: (p) => formatMoney(Number(p.stock) * Number(p.precio_costo)), className: 'tabular-nums text-text' },
   ]
 
   return (

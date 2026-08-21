@@ -1,21 +1,89 @@
+import { useState } from 'react'
 import { AlertTriangle, Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
 import { Table, type Column } from '../../components/ui/Table'
 import { formatMoney } from '../../lib/format'
+import { cantidadInputId, kgEquivalente, precioUnitario } from './precio'
 import type { CartItem } from './types'
 
 interface Props {
   items: CartItem[]
-  onCambiarCantidad: (productoId: string, cantidad: string) => void
-  onQuitar: (productoId: string) => void
+  onCambiarCantidad: (productoId: string, esBolsa: boolean, cantidad: string) => void
+  onQuitar: (productoId: string, esBolsa: boolean) => void
   onVaciar: () => void
 }
 
-function precioUnitario(item: CartItem) {
-  const p = item.producto
-  return p.oferta_activa && p.precio_oferta ? Number(p.precio_oferta) : Number(p.precio_venta)
+/** Cantidad de un producto a granel: en kg, o "quiero $2000 de esto" — muy
+ * habitual en el mostrador de una forrajería. `cantidad` en el carrito
+ * siempre queda en kg; el monto es sólo una forma de cargarlo.
+ *
+ * El monto tipeado se guarda en un buffer local, NO se deriva de item.cantidad
+ * en cada render: si se derivara, cada tecla redondeaba el kg resultante a 3
+ * decimales y reescribía el campo con ese monto recalculado — tipear "2000"
+ * dígito por dígito terminaba mostrando "1.95" porque el primer "2" ya
+ * disparaba el round-trip. Con el buffer, se ve tal cual se tipea; el kg que
+ * viaja al carrito sigue recalculándose en cada cambio igual que antes. */
+function CantidadPorPeso({ item, onCambiarCantidad }: {
+  item: CartItem
+  onCambiarCantidad: Props['onCambiarCantidad']
+}) {
+  const [modo, setModo] = useState<'kg' | 'monto'>('kg')
+  const [montoTexto, setMontoTexto] = useState('')
+  const precio = precioUnitario(item)
+  const unidad = item.producto.unidad_medida || 'kg'
+
+  function activarModoMonto() {
+    const monto = Number(item.cantidad) * precio
+    setMontoTexto(monto > 0 ? String(Math.round(monto * 100) / 100) : '')
+    setModo('monto')
+  }
+
+  function cambiarMonto(valor: string) {
+    setMontoTexto(valor)
+    const kg = precio > 0 ? (Number(valor) || 0) / precio : 0
+    onCambiarCantidad(item.producto.id, item.esBolsa, kg.toFixed(3))
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
+        <input
+          id={cantidadInputId(item.producto.id, item.esBolsa)}
+          type="number" step={modo === 'kg' ? '0.001' : '1'} min="0"
+          placeholder={modo === 'kg' ? '0.000' : '0'}
+          value={modo === 'kg' ? item.cantidad : montoTexto}
+          onChange={(e) => (
+            modo === 'kg'
+              ? onCambiarCantidad(item.producto.id, item.esBolsa, e.target.value)
+              : cambiarMonto(e.target.value)
+          )}
+          className="w-20 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+        />
+        <span className="text-xs text-text-dim">{modo === 'kg' ? unidad : '$'}</span>
+      </div>
+      <div className="flex gap-1">
+        <button
+          type="button" onClick={() => setModo('kg')}
+          className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+            modo === 'kg' ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
+          }`}
+        >
+          {unidad}
+        </button>
+        <button
+          type="button" onClick={activarModoMonto}
+          className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+            modo === 'monto' ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
+          }`}
+        >
+          $
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function superaStock(item: CartItem) {
+  if (item.esBolsa) return kgEquivalente(item) >= Number(item.producto.stock)
   if (item.producto.venta_por_peso) return false
   return Number(item.cantidad) >= Number(item.producto.stock)
 }
@@ -23,9 +91,14 @@ function superaStock(item: CartItem) {
 export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
   if (items.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-text-dim">
-        <ShoppingCart size={28} />
-        <p className="text-sm">El carrito está vacío — buscá un producto para empezar.</p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border text-text-dim">
+        <span className="rounded-full bg-surface-2 p-4">
+          <ShoppingCart size={26} />
+        </span>
+        <div className="text-center">
+          <p className="text-sm font-medium text-text">El carrito está vacío</p>
+          <p className="mt-0.5 text-xs">Escaneá un código, buscá por nombre, o tocá un producto de la grilla.</p>
+        </div>
       </div>
     )
   }
@@ -39,11 +112,14 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       render: (item) => (
         <div className="flex items-center gap-1.5">
           <div>
-            <div className="font-medium text-text">{item.producto.nombre}</div>
+            <div className="font-medium text-text">
+              {item.producto.nombre}
+              {item.esBolsa && <span className="text-text-dim"> (bolsa {Number(item.producto.bolsa_kg)}kg)</span>}
+            </div>
             <div className="text-xs text-text-dim">{item.producto.codigo_barras || 'sin código'}</div>
           </div>
           {superaStock(item) && (
-            <span title={`Sin stock suficiente (stock: ${item.producto.stock})`}>
+            <span title={`Sin stock suficiente (stock: ${item.producto.stock}${item.producto.venta_por_peso ? 'kg' : ''})`}>
               <AlertTriangle size={13} className="shrink-0 text-warning" />
             </span>
           )}
@@ -54,30 +130,25 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       header: 'Cant.',
       render: (item) => {
         const cantidad = Number(item.cantidad)
-        if (item.producto.venta_por_peso) {
-          return (
-            <input
-              type="number" step="0.001" min="0.001" value={item.cantidad}
-              onChange={(e) => onCambiarCantidad(item.producto.id, e.target.value)}
-              className="w-24 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
-            />
-          )
+        if (item.producto.venta_por_peso && !item.esBolsa) {
+          return <CantidadPorPeso item={item} onCambiarCantidad={onCambiarCantidad} />
         }
         return (
           <div className="flex items-center gap-1">
             <button
-              onClick={() => onCambiarCantidad(item.producto.id, String(Math.max(1, cantidad - 1)))}
+              onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(Math.max(1, cantidad - 1)))}
               className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
             >
               <Minus size={15} />
             </button>
             <span className="w-7 text-center tabular-nums">{cantidad}</span>
             <button
-              onClick={() => onCambiarCantidad(item.producto.id, String(cantidad + 1))}
+              onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(cantidad + 1))}
               className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
             >
               <Plus size={15} />
             </button>
+            {item.esBolsa && <span className="text-xs text-text-dim">bolsa{cantidad === 1 ? '' : 's'}</span>}
           </div>
         )
       },
@@ -98,7 +169,7 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       header: '',
       className: 'text-right',
       render: (item) => (
-        <button onClick={() => onQuitar(item.producto.id)} className="rounded p-1 text-danger/70 hover:bg-danger/10 hover:text-danger">
+        <button onClick={() => onQuitar(item.producto.id, item.esBolsa)} className="rounded p-1 text-danger/70 hover:bg-danger/10 hover:text-danger">
           <X size={16} />
         </button>
       ),
@@ -108,7 +179,11 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="mb-2 flex items-center justify-between px-1">
-        <span className="text-sm text-text-dim">
+        <span className="flex items-center gap-2 text-sm text-text-dim">
+          <span className="flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent">
+            <ShoppingCart size={12} />
+            {items.length} línea{items.length === 1 ? '' : 's'}
+          </span>
           <span className="font-medium text-text">{cantidadTotal % 1 === 0 ? cantidadTotal : cantidadTotal.toFixed(3)}</span> ítem{cantidadTotal === 1 ? '' : 's'}
           {' · '}
           <span className="tabular-nums font-medium text-text">{formatMoney(subtotalTotal)}</span>
@@ -122,7 +197,7 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <Table columns={columns} rows={items} rowKey={(item) => item.producto.id} />
+        <Table columns={columns} rows={items} rowKey={(item) => `${item.producto.id}:${item.esBolsa}`} />
       </div>
     </div>
   )

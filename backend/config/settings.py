@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     "kubobots",
     "proveedores",
     "compras",
+    "repartos",
+    "asistente",
     "finanzas",
     "estadisticas",
     "fiscal",
@@ -132,7 +134,7 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
     ),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.PaginacionEstandar",
     "PAGE_SIZE": 50,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -164,3 +166,21 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = (*default_headers, "x-comercio-id")
 
 COMERCIO_ACTIVO_HEADER = "HTTP_X_COMERCIO_ID"
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp — bot propio vinculado por QR (whatsapp-bot/), vacío = desactivado
+# ---------------------------------------------------------------------------
+WHATSAPP_BOT_URL = env("WHATSAPP_BOT_URL", default="")
+WHATSAPP_BOT_API_KEY = env("WHATSAPP_BOT_API_KEY", default="")
+
+
+# ---------------------------------------------------------------------------
+# Asistente (Claude) — vacío = el asistente queda apagado y el resto sigue igual.
+# La key vive sólo en el servidor: el frontend nunca la ve ni la manda.
+# ---------------------------------------------------------------------------
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+ASISTENTE_MODELO = env("ASISTENTE_MODELO", default="claude-opus-5")
+# Cuánto "piensa" antes de responder. Las consultas del mostrador son simples
+# (mirar un dato y contestarlo); subir esto encarece cada pregunta.
+ASISTENTE_EFFORT = env("ASISTENTE_EFFORT", default="medium")

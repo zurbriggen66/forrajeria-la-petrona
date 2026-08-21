@@ -14,17 +14,28 @@ from clientes.models import Cliente, ClienteMovimiento
 from clientes.views import aplicar_movimiento_cliente
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
+from fiscal.afip import ErrorFiscal, solicitar_cae
+from fiscal.models import ComercioFiscalConfig, FiscalQueue
 from kubobots.models import KubobotsCliente
 from productos.models import Producto
+from productos.precios import resolver_precio_item
 
-from .models import Venta, VentaItem
+from .models import Venta, VentaItem, VentaPago
 from .serializers import VentaAnularSerializer, VentaCreateSerializer, VentaSerializer
 
 
 class VentaViewSet(TenantViewSet):
     """Registrar ventas desde el POS (Fase 2) e historial/anulación (Fase 4)."""
 
-    queryset = Venta.objects.all().prefetch_related("items").order_by("-created_at")
+    # select_related/prefetch: sin esto el historial hacía una consulta por
+    # cada venta (cliente, vendedor, cuenta de pago) y otra por cada ítem para
+    # traer el nombre del producto — 60 ventas salían ~450 consultas.
+    queryset = (
+        Venta.objects.all()
+        .select_related("cliente", "vendedor", "cuenta_pago")
+        .prefetch_related("items__producto", "pagos__cuenta_pago")
+        .order_by("-created_at")
+    )
     filterset_fields = ["vendedor", "cliente", "cuenta_pago", "metodo_pago", "anulada", "numero_ticket"]
 
     def get_serializer_class(self):
@@ -87,7 +98,10 @@ class VentaViewSet(TenantViewSet):
             productos_a_actualizar = []
             for item in venta.items.filter(producto__isnull=False).select_related("producto"):
                 producto = Producto.objects.select_for_update().get(pk=item.producto_id)
-                producto.stock = producto.stock + item.cantidad
+                # `peso_kg` guarda los kg reales descontados (venta suelta o por bolsa);
+                # para productos que no son por peso, cantidad ya está en su unidad.
+                cantidad_a_restaurar = item.peso_kg if item.peso_kg is not None else item.cantidad
+                producto.stock = producto.stock + cantidad_a_restaurar
                 productos_a_actualizar.append(producto)
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
 
@@ -102,14 +116,24 @@ class VentaViewSet(TenantViewSet):
             # (total menos lo que se cargó a cuenta corriente, si hubo).
             monto_caja = venta.total - venta.monto_cuenta_corriente
             if venta.caja_sesion_id and venta.caja_sesion.estado == "abierta" and monto_caja > 0:
-                CajaMovimiento.objects.create(
-                    comercio=comercio,
-                    sesion=venta.caja_sesion,
-                    cuenta=venta.cuenta_pago or resolver_cuenta_efectivo(comercio),
-                    tipo="egreso",
-                    concepto=f"Anulación venta #{venta.numero_ticket}",
-                    monto=monto_caja,
-                )
+                # Se devuelve a cada cuenta lo que había entrado por ella: si
+                # la venta fue mixta y se revirtiera todo contra una sola,
+                # esa quedaría en rojo y las otras infladas.
+                pagos = [(p.cuenta_pago, p.monto) for p in venta.pagos.select_related("cuenta_pago")]
+                if not pagos:
+                    # Ventas anteriores al desglose por medio de pago.
+                    pagos = [(venta.cuenta_pago or resolver_cuenta_efectivo(comercio), monto_caja)]
+                CajaMovimiento.objects.bulk_create([
+                    CajaMovimiento(
+                        comercio=comercio,
+                        sesion=venta.caja_sesion,
+                        cuenta=cuenta or resolver_cuenta_efectivo(comercio),
+                        tipo="egreso",
+                        concepto=f"Anulación venta #{venta.numero_ticket}",
+                        monto=monto,
+                    )
+                    for cuenta, monto in pagos
+                ])
 
             # Ídem para lo que se había cargado a la cuenta corriente del
             # cliente: se revierte siempre, sin importar el estado de la caja.
@@ -124,6 +148,126 @@ class VentaViewSet(TenantViewSet):
                 aplicar_movimiento_cliente(venta.cliente, "ajuste", -venta.monto_cuenta_corriente)
 
         return Response(VentaSerializer(venta).data)
+
+    @action(detail=True, methods=["post"])
+    def facturar(self, request, pk=None):
+        """Pide el CAE a ARCA para esta venta (Fase 7). Deliberadamente separado
+        de la creación de la venta: es una llamada de red a un tercero, no puede
+        bloquear el cobro ni los locks de stock de _crear_venta. Se puede
+        reintentar — FiscalQueue.status queda en "error" con el motivo si ARCA
+        rechaza el comprobante o no se pudo conectar."""
+        comercio = resolver_comercio_activo(request)
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).first()
+        if venta is None:
+            raise ValidationError("La venta no existe.")
+        if venta.anulada:
+            raise ValidationError("No se puede facturar una venta anulada.")
+        if venta.facturado:
+            raise ValidationError("Esta venta ya tiene CAE.")
+
+        config = ComercioFiscalConfig.objects.filter(comercio=comercio, activo=True).order_by(
+            "-es_principal"
+        ).first()
+        if config is None:
+            raise ValidationError("Este comercio no tiene configuración fiscal cargada (CUIT/punto de venta).")
+
+        cola, _ = FiscalQueue.objects.update_or_create(
+            comercio=comercio, venta=venta,
+            defaults={"status": "procesando", "error_msg": ""},
+        )
+
+        try:
+            resultado = solicitar_cae(venta, config)
+        except ErrorFiscal as exc:
+            cola.status = "error"
+            cola.error_msg = str(exc)
+            cola.save(update_fields=["status", "error_msg", "updated_at"])
+            raise ValidationError({"fiscal": str(exc)})
+
+        with transaction.atomic():
+            venta.facturado = True
+            venta.cae = resultado["cae"]
+            venta.cae_vencimiento = resultado["cae_vencimiento"]
+            venta.numero_factura = str(resultado["numero"])
+            venta.punto_venta_factura = str(resultado["punto_vta"])
+            venta.tipo_factura = str(resultado["tipo_cbte"])
+            venta.fecha_facturacion = timezone.now()
+            venta.save(update_fields=[
+                "facturado", "cae", "cae_vencimiento", "numero_factura",
+                "punto_venta_factura", "tipo_factura", "fecha_facturacion", "updated_at",
+            ])
+
+            cola.status = "ok"
+            cola.cae = resultado["cae"]
+            cola.cae_vencimiento = resultado["cae_vencimiento"]
+            cola.punto_venta = str(resultado["punto_vta"])
+            cola.numero_factura = str(resultado["numero"])
+            cola.tipo_comprobante = str(resultado["tipo_cbte"])
+            cola.save(update_fields=[
+                "status", "cae", "cae_vencimiento", "punto_venta",
+                "numero_factura", "tipo_comprobante", "updated_at",
+            ])
+
+        return Response(VentaSerializer(venta).data)
+
+    def _resolver_pagos(self, comercio, data, monto_caja, cuenta_pago_obj):
+        """Devuelve [(CuentaPago, monto)] con el reparto del cobro.
+
+        Con `pagos` en el input es un pago mixto y se valida que la suma dé
+        exactamente lo que hay que cobrar (si no, la caja cerraría con
+        diferencia). Sin `pagos`, se mantiene el comportamiento de siempre:
+        todo a `cuenta_pago`, o a efectivo — es lo que sigue mandando la cola
+        offline con ventas guardadas antes de esta versión.
+        """
+        if monto_caja <= 0:
+            return []
+
+        lineas = data.get("pagos") or []
+        if not lineas:
+            return [(cuenta_pago_obj or resolver_cuenta_efectivo(comercio), monto_caja)]
+
+        cuentas_pedidas = {linea["cuenta_pago"] for linea in lineas if linea["cuenta_pago"]}
+        cuentas = {
+            c.id: c for c in CuentaPago.objects.filter(comercio=comercio, id__in=cuentas_pedidas)
+        }
+
+        pagos = []
+        suma = Decimal("0")
+        for linea in lineas:
+            cuenta_id = linea["cuenta_pago"]
+            if cuenta_id is None:
+                cuenta = resolver_cuenta_efectivo(comercio)
+            else:
+                cuenta = cuentas.get(cuenta_id)
+                if cuenta is None:
+                    raise ValidationError({"pagos": "Una de las cuentas de pago no pertenece a este comercio."})
+            pagos.append((cuenta, linea["monto"]))
+            suma += linea["monto"]
+
+        if suma != monto_caja:
+            raise ValidationError({
+                "pagos": (
+                    f"Los pagos suman {suma} y hay que cobrar {monto_caja}. "
+                    "Tienen que coincidir exactamente."
+                )
+            })
+        return pagos
+
+    @staticmethod
+    def _total_por_tipo(pagos, tipo):
+        """Compatibilidad: los campos monto_efectivo/tarjeta/transferencia se
+        siguen completando a partir del tipo de cada cuenta usada."""
+        return sum(
+            (monto for cuenta, monto in pagos if cuenta and cuenta.tipo == tipo), Decimal("0")
+        )
+
+    @staticmethod
+    def _describir_metodo(pagos, metodo_pedido):
+        if len(pagos) > 1:
+            return "mixto"
+        if pagos and pagos[0][0]:
+            return pagos[0][0].tipo or pagos[0][0].nombre
+        return metodo_pedido
 
     def _crear_venta(self, request, comercio, data):
         with transaction.atomic():
@@ -163,29 +307,28 @@ class VentaViewSet(TenantViewSet):
                     raise ValidationError({"items": f"Producto {item['producto']} no existe en este comercio."})
 
                 cantidad = item["cantidad"]
-                if producto.stock < cantidad:
+                precio_unitario, costo_unitario, kg_reales = resolver_precio_item(
+                    producto, cantidad, item.get("es_bolsa")
+                )
+
+                if producto.stock < kg_reales:
                     raise ValidationError({
                         "items": f'No hay stock suficiente de "{producto.nombre}" (disponible: {producto.stock}).'
                     })
 
-                precio_unitario = (
-                    producto.precio_oferta
-                    if producto.oferta_activa and producto.precio_oferta
-                    else producto.precio_venta
-                )
                 subtotal = (precio_unitario * cantidad).quantize(Decimal("0.01"))
                 total += subtotal
 
                 items_a_crear.append(VentaItem(
                     producto=producto,
                     cantidad=cantidad,
-                    peso_kg=cantidad if producto.venta_por_peso else None,
+                    peso_kg=kg_reales if producto.venta_por_peso else None,
                     precio_unitario=precio_unitario,
-                    costo_unitario=producto.precio_costo,
+                    costo_unitario=costo_unitario,
                     subtotal=subtotal,
                 ))
 
-                producto.stock = producto.stock - cantidad
+                producto.stock = producto.stock - kg_reales
                 productos_a_actualizar.append(producto)
 
             total = total - data["descuento"] + data["recargo_monto"]
@@ -204,6 +347,11 @@ class VentaViewSet(TenantViewSet):
                     raise ValidationError({
                         "monto_cuenta_corriente": f"Supera el límite de crédito del cliente (disponible: {disponible})."
                     })
+
+            # Reparto del cobro entre medios de pago. `monto_caja` es lo que
+            # realmente entra hoy: el total menos lo que se fía.
+            monto_caja = total - monto_cuenta_corriente
+            pagos = self._resolver_pagos(comercio, data, monto_caja, cuenta_pago_obj)
 
             vuelto = None
             if data["efectivo_recibido"] is not None:
@@ -226,10 +374,10 @@ class VentaViewSet(TenantViewSet):
                 total=total,
                 descuento=data["descuento"],
                 recargo_monto=data["recargo_monto"],
-                metodo_pago=data["metodo_pago"],
-                monto_efectivo=data["monto_efectivo"],
-                monto_tarjeta=data["monto_tarjeta"],
-                monto_transferencia=data["monto_transferencia"],
+                metodo_pago=self._describir_metodo(pagos, data["metodo_pago"]),
+                monto_efectivo=self._total_por_tipo(pagos, "efectivo"),
+                monto_tarjeta=self._total_por_tipo(pagos, "tarjeta"),
+                monto_transferencia=self._total_por_tipo(pagos, "transferencia"),
                 monto_cuenta_corriente=monto_cuenta_corriente,
                 efectivo_recibido=data["efectivo_recibido"],
                 vuelto=vuelto,
@@ -240,18 +388,23 @@ class VentaViewSet(TenantViewSet):
             VentaItem.objects.bulk_create(items_a_crear)
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
 
-            # Sólo lo efectivamente cobrado en el momento entra a la caja; lo
-            # cargado a cuenta corriente no es plata que haya entrado hoy.
-            monto_caja = total - monto_cuenta_corriente
-            if monto_caja > 0:
-                CajaMovimiento.objects.create(
+            # Un movimiento de caja por medio de pago: el arqueo por contenedor
+            # se calcula sobre CajaMovimiento.cuenta, así que meter un pago
+            # mixto en una sola cuenta descuadraría el cierre.
+            VentaPago.objects.bulk_create([
+                VentaPago(venta=venta, cuenta_pago=cuenta, monto=monto) for cuenta, monto in pagos
+            ])
+            CajaMovimiento.objects.bulk_create([
+                CajaMovimiento(
                     comercio=comercio,
                     sesion=caja_sesion,
-                    cuenta=cuenta_pago_obj or resolver_cuenta_efectivo(comercio),
+                    cuenta=cuenta,
                     tipo="ingreso",
                     concepto=f"Venta #{numero_ticket}",
-                    monto=monto_caja,
+                    monto=monto,
                 )
+                for cuenta, monto in pagos
+            ])
 
             if monto_cuenta_corriente > 0:
                 ClienteMovimiento.objects.create(
@@ -261,7 +414,7 @@ class VentaViewSet(TenantViewSet):
                     monto=monto_cuenta_corriente,
                     referencia=f"Venta #{numero_ticket}",
                 )
-                aplicar_movimiento_cliente(cliente_obj, "cargo", monto_cuenta_corriente)
+                aplicar_movimiento_cliente(cliente_obj, "cargo", monto_cuenta_corriente, f"Venta #{numero_ticket}")
 
             if (
                 cliente_obj

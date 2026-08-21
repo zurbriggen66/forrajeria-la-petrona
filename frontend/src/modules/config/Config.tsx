@@ -6,6 +6,10 @@ import { Select } from '../../components/ui/Select'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
+import { useFiscalConfig, useGuardarFiscalConfig } from '../fiscal/api'
+import { ColaFiscal } from '../fiscal/ColaFiscal'
+import { CONDICIONES_IVA } from '../fiscal/types'
+import { CuentaAsistente } from '../asistente/CuentaAsistente'
 import { InvitarUsuarioModal } from './InvitarUsuarioModal'
 import {
   useActualizarRolUsuario,
@@ -62,6 +66,78 @@ function DatosDelComercio() {
         <Button type="submit" disabled={actualizar.isPending}>
           {actualizar.isPending && <Loader2 size={14} className="animate-spin" />}
           Guardar cambios
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function DatosFiscales() {
+  const { toast } = useToast()
+  const { data: config, isLoading } = useFiscalConfig()
+  const guardar = useGuardarFiscalConfig()
+
+  const [form, setForm] = useState({
+    cuit: '', razon_social: '', punto_venta: '', condicion_iva: '', cert_ref: '', homologacion: true,
+  })
+
+  useEffect(() => {
+    if (config) {
+      setForm({
+        cuit: config.cuit, razon_social: config.razon_social, punto_venta: config.punto_venta,
+        condicion_iva: config.condicion_iva, cert_ref: config.cert_ref, homologacion: config.homologacion,
+      })
+    }
+  }, [config])
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    try {
+      await guardar.mutateAsync({ id: config?.id, ...form })
+      toast('Datos fiscales guardados')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudieron guardar los datos fiscales'), 'error')
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center gap-2 py-10 text-text-dim"><Loader2 size={16} className="animate-spin" /> Cargando…</div>
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-4">
+        <Input id="cuit-fiscal" label="CUIT" required value={form.cuit} onChange={(e) => setForm({ ...form, cuit: e.target.value })} />
+        <Input id="razon_social" label="Razón social" value={form.razon_social} onChange={(e) => setForm({ ...form, razon_social: e.target.value })} />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Input id="punto_venta" label="Punto de venta" required value={form.punto_venta} onChange={(e) => setForm({ ...form, punto_venta: e.target.value })} />
+        <Select id="condicion_iva" label="Condición frente al IVA" value={form.condicion_iva} onChange={(e) => setForm({ ...form, condicion_iva: e.target.value })}>
+          <option value="">Elegí una opción…</option>
+          {CONDICIONES_IVA.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </Select>
+      </div>
+      <Input
+        id="cert_ref" label="Referencia del certificado" value={form.cert_ref}
+        onChange={(e) => setForm({ ...form, cert_ref: e.target.value })}
+        placeholder="Nombre de archivo sin extensión (ej: forrajeria-la-petrona)"
+      />
+      <label className="flex items-center gap-2 text-sm text-text">
+        <input
+          type="checkbox" className="accent-accent"
+          checked={form.homologacion} onChange={(e) => setForm({ ...form, homologacion: e.target.checked })}
+        />
+        Modo homologación (pruebas — no emite comprobantes reales)
+      </label>
+      <p className="text-xs text-text-dim">
+        El certificado y la clave privada de ARCA no se cargan desde acá — los coloca quien
+        administra el servidor en <code>backend/fiscal_certs/</code>, con el mismo nombre que la
+        "Referencia del certificado".
+      </p>
+      <div>
+        <Button type="submit" disabled={guardar.isPending}>
+          {guardar.isPending && <Loader2 size={14} className="animate-spin" />}
+          Guardar datos fiscales
         </Button>
       </div>
     </form>
@@ -170,8 +246,29 @@ export function Config() {
 
       {esDueño && (
         <section className="flex flex-col gap-4">
+          <h2 className="font-display text-sm font-semibold text-text">Datos fiscales</h2>
+          <DatosFiscales />
+        </section>
+      )}
+
+      {esDueño && (
+        <section className="flex flex-col gap-4">
+          <h2 className="font-display text-sm font-semibold text-text">Facturación electrónica</h2>
+          <ColaFiscal />
+        </section>
+      )}
+
+      {esDueño && (
+        <section className="flex flex-col gap-4">
           <h2 className="font-display text-sm font-semibold text-text">Usuarios</h2>
           <Usuarios />
+        </section>
+      )}
+
+      {esDueño && (
+        <section className="flex flex-col gap-4">
+          <h2 className="font-display text-sm font-semibold text-text">Asistente con IA</h2>
+          <CuentaAsistente />
         </section>
       )}
 

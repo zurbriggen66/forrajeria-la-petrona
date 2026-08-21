@@ -38,6 +38,15 @@ class Comercio(BaseModel):
     kubobots_empleados_enabled = models.BooleanField(default=False)
     kubobots_clientes_enabled = models.BooleanField(default=False)
     kubobots_fid_tasa = models.DecimalField(max_digits=10, decimal_places=4, default=0)
+    # Asistente con IA: cuántas consultas por día tiene incluidas esta sucursal.
+    # 0 = apagado para este comercio. Es el tope que separa un plan de otro.
+    asistente_consultas_diarias = models.IntegerField(default=0)
+    # Cuenta de Anthropic propia del comercio. Si está cargada, el consumo lo
+    # factura el cliente directamente y no quien administra el sistema. Se
+    # guarda cifrada (ver asistente/claves.py) y nunca se devuelve por la API.
+    asistente_api_key_cifrada = models.TextField(blank=True, default="")
+    # Modelo elegido por el comercio. Vacío = el default del servidor.
+    asistente_modelo = models.CharField(max_length=60, blank=True, default="")
 
     def __str__(self):
         return self.nombre

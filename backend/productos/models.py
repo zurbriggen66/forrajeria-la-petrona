@@ -49,10 +49,18 @@ class Producto(TenantModel):
     stock_minimo = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     stock_reservado = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     stock_deposito = models.DecimalField(max_digits=14, decimal_places=3, default=0)
-    # venta por peso / balanza
+    # venta a granel — el mismo producto puede venderse suelto por kg (precio_venta,
+    # interpretado "por kg" cuando venta_por_peso=True) y, opcionalmente, también en
+    # bolsa cerrada de bolsa_kg kilos a precio_bolsa. El stock siempre se guarda en kg:
+    # las dos formas de venta descuentan del mismo pozo (ver ventas/views.py).
     venta_por_peso = models.BooleanField(default=False)
     unidad_medida = models.CharField(max_length=20, choices=UNIDADES, default="unidad")
-    plu_balanza = models.CharField(max_length=20, blank=True)
+    precio_bolsa = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    bolsa_kg = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    # Preferencia de visualización/carga: `stock` sigue guardándose en kg
+    # siempre (ver comentario arriba); esto sólo cambia en qué unidad lo
+    # tipea y lo ve el dueño cuando el producto tiene bolsa cerrada.
+    stock_en_bolsas = models.BooleanField(default=False)
     # ofertas con vigencia
     precio_oferta = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     oferta_activa = models.BooleanField(default=False)

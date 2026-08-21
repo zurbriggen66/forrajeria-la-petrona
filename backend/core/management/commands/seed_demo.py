@@ -1,9 +1,9 @@
 """
 Seed de datos FICTICIOS para desarrollo (Fase 0).
 
-Crea: 1 comercio demo, 1 usuario Dueño, 10 categorías, 40 productos variados
-(por peso, con oferta, indumentaria con talle/color), 5 clientes, 3 proveedores,
-3 cuentas de pago.
+Crea: 1 comercio demo (forrajería), 1 usuario Dueño, 7 categorías, 40 productos variados
+(alimento balanceado, semillas a granel, agroquímicos, ferretería rural, veterinaria,
+accesorios para mascotas), 5 clientes, 3 proveedores, 3 cuentas de pago.
 
 Nunca usa datos reales ni el comercio_id observado en el análisis (a6a91020-...).
 Idempotente: si el comercio demo ya existe, no vuelve a crear nada.
@@ -20,27 +20,27 @@ from core.models import Comercio, Perfil, UsuarioComercio
 from productos.models import CategoriaProducto, Producto, ProductoUniversal
 from proveedores.models import Proveedor
 
-COMERCIO_DEMO_NOMBRE = "Almacén San Martín (demo)"
+COMERCIO_DEMO_NOMBRE = "Forrajería La Central (demo)"
 DUENO_EMAIL = "dueno@demo.kubo"
 DUENO_PASSWORD = "kubo-demo-1234"  # sólo para desarrollo local, nunca en producción
 
 CATEGORIAS = [
-    "Almacén", "Bebidas", "Lácteos", "Limpieza", "Kiosco",
-    "Heladería", "Indumentaria", "Verdulería", "Panificados", "Congelados",
+    "Alimento Balanceado", "Semillas y Granos", "Agroquímicos y Fertilizantes",
+    "Ferretería Rural", "Veterinaria y Sanidad Animal", "Accesorios para Mascotas", "Varios",
 ]
 
 PROVEEDORES = [
-    ("Distribuidora Norte SRL", "30-71234567-8"),
-    ("Alimentos del Sur SA", "30-70987654-3"),
-    ("Textiles Rioplatense", "30-69876543-2"),
+    ("Molinos del Sur SRL", "30-71234567-8"),
+    ("AgroInsumos Pampeana SA", "30-70987654-3"),
+    ("Distribuidora Rural Norte", "30-69876543-2"),
 ]
 
 CLIENTES = [
     ("Juana Pérez", "consumidor_final"),
     ("Carlos Gómez", "consumidor_final"),
-    ("Panadería El Trigal", "responsable_inscripto"),
-    ("María Fernández", "consumidor_final"),
-    ("Kiosco Don Beto", "monotributista"),
+    ("Estancia La Esperanza", "responsable_inscripto"),
+    ("Establecimiento El Ombú", "monotributista"),
+    ("Veterinaria San Roque", "responsable_inscripto"),
 ]
 
 CUENTAS_PAGO = [
@@ -49,23 +49,23 @@ CUENTAS_PAGO = [
     ("Transferencia", "transferencia", 0),
 ]
 
-TALLES = ["S", "M", "L", "XL"]
-COLORES = ["Negro", "Blanco", "Azul", "Rojo", "Verde"]
+# Categoría que se vende suelta por kg (granel), no en bolsa cerrada.
+CATEGORIA_GRANEL = "Semillas y Granos"
 
 # Catálogo maestro GLOBAL (no pertenece a ningún comercio) para autocompletar
 # el alta de productos por código de barras. Códigos que NO se solapan con los
 # que genera el seed por comercio (7790000xxxxx) para poder probar el alta real.
 PRODUCTOS_UNIVERSAL = [
-    ("7791234000012", "Coca-Cola 1.5L", "Bebidas", "Coca-Cola"),
-    ("7791234000029", "Yerba Mate Playadito 1kg", "Almacén", "Playadito"),
-    ("7791234000036", "Leche Entera La Serenísima 1L", "Lácteos", "La Serenísima"),
-    ("7791234000043", "Detergente Magistral 750ml", "Limpieza", "Magistral"),
-    ("7791234000050", "Alfajor Guaymallén Triple", "Kiosco", "Guaymallén"),
-    ("7791234000067", "Helado Frigor Pote 1kg", "Heladería", "Frigor"),
-    ("7791234000074", "Remera básica algodón", "Indumentaria", "Genérica"),
-    ("7791234000081", "Papa Negra x kg", "Verdulería", "Genérica"),
-    ("7791234000098", "Pan Lactal Bimbo", "Panificados", "Bimbo"),
-    ("7791234000104", "Hamburguesas Paty x4 congeladas", "Congelados", "Paty"),
+    ("7791234000012", "Alimento Balanceado Perro Adulto 25kg", "Alimento Balanceado", "Nutrical"),
+    ("7791234000029", "Alimento Balanceado Gato 15kg", "Alimento Balanceado", "Nutrical"),
+    ("7791234000036", "Maíz Partido x 25kg", "Alimento Balanceado", "Genérico"),
+    ("7791234000043", "Semilla de Alfalfa x kg", "Semillas y Granos", "Genérico"),
+    ("7791234000050", "Semilla de Avena x kg", "Semillas y Granos", "Genérico"),
+    ("7791234000067", "Glifosato 20L", "Agroquímicos y Fertilizantes", "AgroQuímica"),
+    ("7791234000074", "Fertilizante Urea x 50kg", "Agroquímicos y Fertilizantes", "AgroQuímica"),
+    ("7791234000081", "Alambre de Púa x Rollo", "Ferretería Rural", "Acindar"),
+    ("7791234000098", "Antiparasitario Bovino 500ml", "Veterinaria y Sanidad Animal", "Vetal"),
+    ("7791234000104", "Collar Antipulgas Perro", "Accesorios para Mascotas", "Genérico"),
 ]
 
 
@@ -101,7 +101,7 @@ class Command(BaseCommand):
             direccion="Av. Ficticia 1234, CABA",
             telefono="011-4000-0000",
             email="contacto@demo.kubo",
-            rubro="almacen",
+            rubro="forrajeria",
         )
 
         User = get_user_model()
@@ -155,19 +155,8 @@ class Command(BaseCommand):
                 stock_minimo=10,
             )
 
-            if categoria.nombre == "Indumentaria":
-                kwargs.update(
-                    subcategoria="Remeras",
-                    modelo_nombre=f"Modelo {i}",
-                    talle=rnd.choice(TALLES),
-                    color=rnd.choice(COLORES),
-                )
-            elif categoria.nombre in ("Verdulería", "Heladería"):
-                kwargs.update(
-                    venta_por_peso=True,
-                    unidad_medida="kg",
-                    plu_balanza=f"{2000 + i}",
-                )
+            if categoria.nombre == CATEGORIA_GRANEL:
+                kwargs.update(venta_por_peso=True, unidad_medida="kg")
 
             if i % 5 == 0:
                 kwargs.update(

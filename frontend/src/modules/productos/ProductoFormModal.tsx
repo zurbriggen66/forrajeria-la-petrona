@@ -6,6 +6,7 @@ import { Select } from '../../components/ui/Select'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
+import { formatMoney } from '../../lib/format'
 import { buscarProductoUniversal, useCategorias, useCreateProducto, useProveedores, useUpdateProducto } from './api'
 import type { Producto, ProductoInput } from './types'
 
@@ -24,12 +25,11 @@ function emptyForm(): ProductoInput {
     stock_minimo: '0',
     venta_por_peso: false,
     unidad_medida: 'unidad',
-    plu_balanza: '',
+    bolsa_kg: '',
+    precio_bolsa: '',
+    stock_en_bolsas: false,
     oferta_activa: false,
     precio_oferta: '',
-    modelo_nombre: '',
-    talle: '',
-    color: '',
     destacado: false,
     activo: true,
   }
@@ -49,8 +49,45 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
   const isEdit = Boolean(producto)
   const saving = createProducto.isPending || updateProducto.isPending
 
+  const bolsaKg = Number(form.bolsa_kg)
+  const precioBolsa = Number(form.precio_bolsa)
+  const tieneBolsa = bolsaKg > 0 && precioBolsa > 0
+  const precioBolsaPorKg = tieneBolsa ? precioBolsa / bolsaKg : null
+  // El stock siempre se guarda en kg (ver Producto.stock en el backend); esto
+  // sólo decide en qué unidad lo tipea y lo ve el dueño en este formulario.
+  const stockEnBolsas = Boolean(form.venta_por_peso && form.stock_en_bolsas && tieneBolsa)
+
   function set<K extends keyof ProductoInput>(key: K, value: ProductoInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function valorStockMostrado(kgValue: string | null | undefined): string {
+    if (!stockEnBolsas) return kgValue ?? '0'
+    return String(Math.round(((Number(kgValue) || 0) / bolsaKg) * 100) / 100)
+  }
+
+  function cambiarStock(key: 'stock' | 'stock_minimo', valorMostrado: string) {
+    if (!stockEnBolsas) {
+      set(key, valorMostrado)
+      return
+    }
+    set(key, String((Number(valorMostrado) || 0) * bolsaKg))
+  }
+
+  // precio_costo se guarda siempre "por kg" (así el margen se compara contra
+  // precio_venta, que también es por kg) — acá sólo se multiplica/divide por
+  // bolsaKg para mostrarlo y cargarlo como costo de la bolsa entera.
+  function valorCostoMostrado(costoPorKg: string | null | undefined): string {
+    if (!stockEnBolsas) return costoPorKg ?? '0'
+    return String(Math.round((Number(costoPorKg) || 0) * bolsaKg * 100) / 100)
+  }
+
+  function cambiarCosto(valorMostrado: string) {
+    if (!stockEnBolsas) {
+      set('precio_costo', valorMostrado)
+      return
+    }
+    set('precio_costo', String((Number(valorMostrado) || 0) / bolsaKg))
   }
 
   async function handleCodigoBarrasBlur() {
@@ -143,49 +180,126 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
           </Select>
         </section>
 
-        <section className="grid grid-cols-4 gap-4">
-          <Input
-            id="precio_costo" label="Precio costo" type="number" step="0.01" min="0"
-            value={form.precio_costo ?? '0'} onChange={(e) => set('precio_costo', e.target.value)}
-          />
-          <Input
-            id="precio_venta" label="Precio venta" type="number" step="0.01" min="0" required
-            value={form.precio_venta ?? '0'} onChange={(e) => set('precio_venta', e.target.value)}
-          />
-          <Input
-            id="stock" label="Stock" type="number" step="0.001" min="0"
-            value={form.stock ?? '0'} onChange={(e) => set('stock', e.target.value)}
-          />
-          <Input
-            id="stock_minimo" label="Stock mínimo" type="number" step="0.001" min="0"
-            value={form.stock_minimo ?? '0'} onChange={(e) => set('stock_minimo', e.target.value)}
-          />
-        </section>
-
         <section className="rounded-lg border border-border bg-surface-2/50 p-4">
-          <label className="flex items-center gap-2 text-sm text-text">
+          <label className="flex items-center gap-2 text-sm font-medium text-text">
             <input
               type="checkbox"
               checked={form.venta_por_peso ?? false}
-              onChange={(e) => set('venta_por_peso', e.target.checked)}
+              onChange={(e) => {
+                const venta_por_peso = e.target.checked
+                setForm((prev) => ({
+                  ...prev,
+                  venta_por_peso,
+                  // "unidad" no es una unidad de peso válida — sin esto, si el
+                  // usuario tilda "a granel" y no toca el select de Unidad, se
+                  // guarda "unidad" igual (aunque el select ya muestre "kg").
+                  unidad_medida: venta_por_peso && (!prev.unidad_medida || prev.unidad_medida === 'unidad')
+                    ? 'kg' : prev.unidad_medida,
+                }))
+              }}
               className="accent-accent"
             />
-            Se vende por peso / balanza
+            Este producto se vende por kilo (a granel)
           </label>
+          <p className="mt-1 text-xs text-text-dim">
+            Ej: alimento balanceado que se pesa suelto y también se vende en bolsas cerradas.
+          </p>
+
           {form.venta_por_peso && (
-            <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4">
               <Select
-                id="unidad_medida" label="Unidad" value={form.unidad_medida ?? 'kg'}
+                id="unidad_medida" label="Se pesa en" value={form.unidad_medida ?? 'kg'}
                 onChange={(e) => set('unidad_medida', e.target.value)}
+                className="max-w-40"
               >
                 {UNIDADES.filter((u) => u !== 'unidad').map((u) => <option key={u} value={u}>{u}</option>)}
               </Select>
+
               <Input
-                id="plu_balanza" label="PLU balanza" value={form.plu_balanza ?? ''}
-                onChange={(e) => set('plu_balanza', e.target.value)}
+                id="precio_venta" label={`Precio vendido suelto (por ${form.unidad_medida || 'kg'})`}
+                type="number" step="0.01" min="0" required
+                value={form.precio_venta ?? '0'} onChange={(e) => set('precio_venta', e.target.value)}
               />
+
+              <div>
+                <p className="mb-2 text-xs text-text-dim">
+                  Opcional: completá esto si además la vendés en bolsas cerradas (ej. bolsas de 20kg), sin dejar de venderla suelta.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    id="bolsa_kg" label={`${form.unidad_medida || 'kg'} por bolsa`} type="number" step="0.001" min="0"
+                    value={form.bolsa_kg ?? ''} onChange={(e) => set('bolsa_kg', e.target.value)}
+                  />
+                  <Input
+                    id="precio_bolsa" label="Precio por bolsa" type="number" step="0.01" min="0"
+                    value={form.precio_bolsa ?? ''} onChange={(e) => set('precio_bolsa', e.target.value)}
+                  />
+                </div>
+                {precioBolsaPorKg !== null && (
+                  <>
+                    <p className="mt-2 text-xs text-text-dim">
+                      La bolsa entera sale <span className="text-accent-2">{formatMoney(precioBolsaPorKg)}/{form.unidad_medida || 'kg'}</span>
+                      {Number(form.precio_venta) > 0 && (
+                        <> — vendido suelto sale <span className="text-warning">{formatMoney(form.precio_venta!)}/{form.unidad_medida || 'kg'}</span></>
+                      )}
+                    </p>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Cargar y ver el stock en</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => set('stock_en_bolsas', false)}
+                          className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                            !form.stock_en_bolsas ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
+                          }`}
+                        >
+                          {form.unidad_medida || 'kg'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => set('stock_en_bolsas', true)}
+                          className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                            form.stock_en_bolsas ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
+                          }`}
+                        >
+                          Bolsas
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           )}
+        </section>
+
+        <section className={form.venta_por_peso ? 'grid grid-cols-3 gap-4' : 'grid grid-cols-4 gap-4'}>
+          <Input
+            id="precio_costo"
+            label={stockEnBolsas ? 'Precio costo (por bolsa)' : form.venta_por_peso ? `Precio costo (por ${form.unidad_medida || 'kg'})` : 'Precio costo'}
+            type="number" step="0.01" min="0"
+            value={valorCostoMostrado(form.precio_costo)} onChange={(e) => cambiarCosto(e.target.value)}
+          />
+          {!form.venta_por_peso && (
+            <Input
+              id="precio_venta" label="Precio venta"
+              type="number" step="0.01" min="0" required
+              value={form.precio_venta ?? '0'} onChange={(e) => set('precio_venta', e.target.value)}
+            />
+          )}
+          <Input
+            id="stock"
+            label={stockEnBolsas ? 'Stock (bolsas)' : form.venta_por_peso ? `Stock (${form.unidad_medida || 'kg'})` : 'Stock'}
+            type="number" step="0.001" min="0"
+            value={valorStockMostrado(form.stock)} onChange={(e) => cambiarStock('stock', e.target.value)}
+          />
+          <Input
+            id="stock_minimo"
+            label={stockEnBolsas ? 'Stock mínimo (bolsas)' : form.venta_por_peso ? `Stock mínimo (${form.unidad_medida || 'kg'})` : 'Stock mínimo'}
+            type="number" step="0.001" min="0"
+            value={valorStockMostrado(form.stock_minimo)} onChange={(e) => cambiarStock('stock_minimo', e.target.value)}
+          />
         </section>
 
         <section className="rounded-lg border border-border bg-surface-2/50 p-4">
@@ -217,23 +331,6 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
           />
           Destacado — aparece en los accesos rápidos de Venta
         </label>
-
-        {form.categoria === 'Indumentaria' && (
-          <section className="grid grid-cols-3 gap-4 rounded-lg border border-border bg-surface-2/50 p-4">
-            <Input
-              id="modelo_nombre" label="Modelo" value={form.modelo_nombre ?? ''}
-              onChange={(e) => set('modelo_nombre', e.target.value)}
-            />
-            <Input
-              id="talle" label="Talle" value={form.talle ?? ''}
-              onChange={(e) => set('talle', e.target.value)}
-            />
-            <Input
-              id="color" label="Color" value={form.color ?? ''}
-              onChange={(e) => set('color', e.target.value)}
-            />
-          </section>
-        )}
 
         <div className="flex justify-end gap-3">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>

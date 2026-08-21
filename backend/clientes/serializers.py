@@ -16,7 +16,7 @@ class ClienteSerializer(serializers.ModelSerializer):
 class ClienteMovimientoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClienteMovimiento
-        fields = ["id", "cliente", "tipo", "monto", "referencia", "created_at"]
+        fields = ["id", "cliente", "tipo", "monto", "referencia", "medio_pago", "created_at"]
         read_only_fields = ["id", "created_at"]
 
 
@@ -27,6 +27,9 @@ class ClienteMovimientoCreateSerializer(serializers.Serializer):
     tipo = serializers.ChoiceField(choices=["pago", "ajuste"])
     monto = serializers.DecimalField(max_digits=14, decimal_places=2)
     referencia = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
+    medio_pago = serializers.ChoiceField(
+        choices=["efectivo", "transferencia", "tarjeta"], required=False, allow_blank=True, default="",
+    )
 
     def validate(self, data):
         if data["tipo"] == "pago" and data["monto"] <= 0:

@@ -11,7 +11,7 @@ import { ProductosListado } from './modules/productos/ProductosListado'
 import { Combos } from './modules/productos/Combos'
 import { Aumentos } from './modules/productos/Aumentos'
 import { Historial } from './modules/productos/Historial'
-import { EstadoInventario } from './modules/inventario/EstadoInventario'
+import { Stock } from './modules/inventario/Stock'
 import { RankingRentabilidad } from './modules/inventario/RankingRentabilidad'
 import { PosPage } from './modules/pos/PosPage'
 import { ControlCaja } from './modules/caja/ControlCaja'
@@ -29,9 +29,10 @@ import { Proveedores } from './modules/proveedores/Proveedores'
 import { PedidosSugeridos } from './modules/proveedores/PedidosSugeridos'
 import { PedidosManuales } from './modules/proveedores/PedidosManuales'
 import { Compras } from './modules/compras/Compras'
-import { Deposito } from './modules/inventario/Deposito'
+import { Repartos } from './modules/repartos/Repartos'
+import { Presupuestos } from './modules/presupuestos/Presupuestos'
+import { Asistente } from './modules/asistente/Asistente'
 import { Clientes } from './modules/clientes/Clientes'
-import { Leads } from './modules/crm/Leads'
 import { Sucursales } from './modules/admin/Sucursales'
 import { Turnos } from './modules/empleados/Turnos'
 import { Etiquetas } from './modules/etiquetas/Etiquetas'
@@ -41,11 +42,12 @@ import { Config } from './modules/config/Config'
 // sin Mapa Neural). El resto sigue como placeholder hasta que le toque su fase.
 const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/pos': PosPage,
+  '/asistente': Asistente,
   '/productos/listado': ProductosListado,
   '/productos/combos': Combos,
   '/productos/aumentos': Aumentos,
   '/productos/historial': Historial,
-  '/inventario/stock': EstadoInventario,
+  '/stock': Stock,
   '/inventario/ranking': RankingRentabilidad,
   '/caja/contenedores': ControlCaja,
   '/caja/movimientos': Movimientos,
@@ -62,10 +64,10 @@ const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/pedidos/sugeridos': PedidosSugeridos,
   '/pedidos/manuales': PedidosManuales,
   '/compras': Compras,
-  '/deposito': Deposito,
+  '/repartos': Repartos,
+  '/presupuestos': Presupuestos,
   '/clientes': Clientes,
-  '/crm': Leads,
-  '/admin': Sucursales,
+  '/sucursales': Sucursales,
   '/empleados': Turnos,
   '/etiquetas': Etiquetas,
   '/config': Config,

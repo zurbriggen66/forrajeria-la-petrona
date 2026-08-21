@@ -1,5 +1,6 @@
 asgiref==3.12.1
 attrs==26.1.0
+certifi==2026.7.22
 Django==6.1
 django-cors-headers==4.9.0
 django-environ==0.14.0
@@ -13,7 +14,20 @@ jsonschema-specifications==2025.9.1
 PyJWT==2.13.0
 PyYAML==6.0.3
 referencing==0.37.0
+requests==2.32.5
 rpds-py==2026.6.3
 sqlparse==0.5.5
 tzdata==2026.3
 uritemplate==4.2.0
+
+# Fase 7 — facturación electrónica ARCA/AFIP (WSAA + WSFEv1).
+# El paquete PyAfipWs de PyPI (2.7.1874) no instala en Python 3.12+: su .tar.gz
+# tiene un symlink que la extracción segura de tarfile rechaza. Se instala
+# desde GitHub, que sí compila limpio (versión 3.13.3145 al fijar este commit).
+pyafipws @ git+https://github.com/reingart/pyafipws.git@d595b072110accec9dae1ddb58165ab847b8520a
+# pysimplesoap (dependencia de pyafipws) todavía usa `distutils`, que Python
+# 3.12+ sacó de la stdlib — setuptools trae el shim que lo vuelve a exponer.
+setuptools
+
+# Asistente con IA (Claude) — opcional; sin la API key el asistente queda apagado.
+anthropic

@@ -19,11 +19,3 @@ class StockDeposito(TenantModel):
 
     class Meta:
         unique_together = ("deposito", "producto")
-
-
-class BaldeHeladeria(TenantModel):
-    sabor = models.CharField(max_length=120, blank=True)
-    producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, blank=True)
-    peso_inicial = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
-    peso_actual = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
-    estado = models.CharField(max_length=30, default="activo")

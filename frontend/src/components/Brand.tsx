@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react'
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-brand text-[#0a0714]">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-brand text-accent-ink">
         <Sparkles size={15} strokeWidth={2.5} />
       </span>
       {!compact && (

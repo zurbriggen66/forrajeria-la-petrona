@@ -17,6 +17,13 @@ export interface VentaItem {
   subtotal: string
 }
 
+export interface VentaPago {
+  id: string
+  cuenta_pago: string | null
+  cuenta_pago_nombre: string | null
+  monto: string
+}
+
 export interface Venta {
   id: string
   numero_ticket: number | null
@@ -43,6 +50,7 @@ export interface Venta {
   fecha_anulacion: string | null
   created_at: string
   items: VentaItem[]
+  pagos: VentaPago[]
 }
 
 export interface VentasFiltros {

@@ -51,7 +51,13 @@
       "Bash(../backend_venv/Scripts/python.exe manage.py shell -c \"from productos.models import Producto; print\\(Producto.objects.filter\\(destacado=True\\).count\\(\\)\\)\")",
       "Bash(../backend_venv/Scripts/python.exe manage.py shell -c ' *)",
       "Bash(node check_pos2.js)",
-      "Bash(node check_cart_table.js)"
+      "Bash(node check_cart_table.js)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py makemigrations productos inventario)",
+      "Bash(node check_forrajeria.js)",
+      "Bash(taskkill //F //PID 28776)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py makemigrations productos)",
+      "Bash(../backend_venv/Scripts/python.exe manage.py test ventas)",
+      "Bash(node check_bolsa.js)"
     ]
   }
 }

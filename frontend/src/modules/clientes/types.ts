@@ -33,6 +33,7 @@ export interface ClienteInput {
 }
 
 export type TipoMovimientoCliente = 'cargo' | 'pago' | 'ajuste'
+export type MedioPago = 'efectivo' | 'transferencia' | 'tarjeta'
 
 export interface ClienteMovimiento {
   id: string
@@ -40,6 +41,7 @@ export interface ClienteMovimiento {
   tipo: TipoMovimientoCliente
   monto: string
   referencia: string
+  medio_pago: MedioPago | ''
   created_at: string
 }
 
@@ -47,6 +49,7 @@ export interface ClienteMovimientoInput {
   tipo: 'pago' | 'ajuste'
   monto: string
   referencia?: string
+  medio_pago?: MedioPago | ''
 }
 
 export interface ClienteAsignacion {

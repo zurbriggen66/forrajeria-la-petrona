@@ -41,7 +41,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             "id", "codigo_barras", "nombre", "descripcion", "categoria", "subcategoria",
             "proveedor", "proveedor_nombre", "precio_costo", "precio_venta", "margen_pct", "alicuota_iva",
             "stock", "stock_minimo", "stock_bajo",
-            "venta_por_peso", "unidad_medida", "plu_balanza",
+            "venta_por_peso", "unidad_medida", "precio_bolsa", "bolsa_kg", "stock_en_bolsas",
             "precio_oferta", "oferta_activa",
             "modelo_nombre", "talle", "color",
             "destacado", "activo", "created_at", "updated_at",

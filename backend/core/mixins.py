@@ -13,26 +13,38 @@ from .models import UsuarioComercio
 
 
 def resolver_comercio_activo(request):
+    # Se cachea en el request porque una misma vista lo llama varias veces
+    # (get_queryset, perform_create, y de nuevo dentro del create de cada
+    # módulo): sin esto, cada llamada repetía las consultas de abajo.
+    cacheado = getattr(request, "_comercio_activo_cache", None)
+    if cacheado is not None:
+        return cacheado
+
     user = request.user
     header_comercio_id = request.headers.get("X-Comercio-Id")
 
-    relaciones = UsuarioComercio.objects.filter(user=user).select_related("comercio")
+    # Una sola consulta y se resuelve en memoria: antes eran hasta tres
+    # (filter().first() + count() + count()) para responder lo mismo.
+    relaciones = list(UsuarioComercio.objects.filter(user=user).select_related("comercio"))
 
     if header_comercio_id:
-        relacion = relaciones.filter(comercio_id=header_comercio_id).first()
-        if relacion is None:
+        for relacion in relaciones:
+            if str(relacion.comercio_id) == str(header_comercio_id):
+                comercio = relacion.comercio
+                break
+        else:
             raise PermissionDenied("El usuario no pertenece al comercio indicado en X-Comercio-Id.")
-        return relacion.comercio
-
-    if relaciones.count() == 1:
-        return relaciones.first().comercio
-
-    if relaciones.count() == 0:
+    elif len(relaciones) == 1:
+        comercio = relaciones[0].comercio
+    elif not relaciones:
         raise PermissionDenied("El usuario no está asociado a ningún comercio.")
+    else:
+        raise PermissionDenied(
+            "El usuario opera varios comercios: mandá el header X-Comercio-Id."
+        )
 
-    raise PermissionDenied(
-        "El usuario opera varios comercios: mandá el header X-Comercio-Id."
-    )
+    request._comercio_activo_cache = comercio
+    return comercio
 
 
 class TenantViewSet(viewsets.ModelViewSet):

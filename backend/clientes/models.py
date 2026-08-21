@@ -19,6 +19,13 @@ class Cliente(TenantModel):
         return self.nombre
 
 
+MEDIOS_PAGO = [
+    ("efectivo", "Efectivo"),
+    ("transferencia", "Transferencia"),
+    ("tarjeta", "Tarjeta"),
+]
+
+
 class ClienteMovimiento(TenantModel):
     """Cuenta corriente del cliente: ventas 'fiadas' (cargo) y pagos que hace
     para saldarlas, ídem ProveedorMovimiento pero en sentido inverso — acá el
@@ -27,6 +34,7 @@ class ClienteMovimiento(TenantModel):
     tipo = models.CharField(max_length=30)  # cargo | pago | ajuste
     monto = models.DecimalField(max_digits=14, decimal_places=2)
     referencia = models.CharField(max_length=120, blank=True)
+    medio_pago = models.CharField(max_length=20, choices=MEDIOS_PAGO, blank=True)  # solo aplica a tipo=pago
 
 
 class ClienteAsignacion(TenantModel):

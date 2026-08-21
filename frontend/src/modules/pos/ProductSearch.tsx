@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Search } from 'lucide-react'
 import { formatMoney } from '../../lib/format'
+import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
 
 interface Props {
   productos: Producto[]
-  onAgregar: (producto: Producto) => void
+  onAgregar: (producto: Producto, esBolsa: boolean) => void
 }
 
 export function ProductSearch({ productos, onAgregar }: Props) {
@@ -17,7 +18,7 @@ export function ProductSearch({ productos, onAgregar }: Props) {
     const q = query.trim().toLowerCase()
     if (q.length < 1) return []
     return productos
-      .filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.includes(q) || p.plu_balanza === q)
+      .filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.includes(q))
       .slice(0, 8)
   }, [query, productos])
 
@@ -25,8 +26,8 @@ export function ProductSearch({ productos, onAgregar }: Props) {
     setHighlightIndex(0)
   }, [resultados])
 
-  function agregar(producto: Producto) {
-    onAgregar(producto)
+  function agregar(producto: Producto, esBolsa: boolean) {
+    onAgregar(producto, esBolsa)
     setQuery('')
     inputRef.current?.focus()
   }
@@ -50,12 +51,13 @@ export function ProductSearch({ productos, onAgregar }: Props) {
     }
     if (e.key !== 'Enter') return
     e.preventDefault()
-    // Lector de código de barras: tipea el código completo y manda Enter.
-    const exacto = productos.find((p) => p.codigo_barras === query.trim() || p.plu_balanza === query.trim())
+    // Lector de código de barras / Enter: siempre agrega en modo suelto —
+    // vender la bolsa es una acción explícita del cajero (botón aparte).
+    const exacto = productos.find((p) => p.codigo_barras === query.trim())
     if (exacto) {
-      agregar(exacto)
+      agregar(exacto, false)
     } else if (resultados[highlightIndex]) {
-      agregar(resultados[highlightIndex])
+      agregar(resultados[highlightIndex], false)
     }
   }
 
@@ -69,33 +71,58 @@ export function ProductSearch({ productos, onAgregar }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Escaneá o buscá por nombre, código o PLU… (↑↓ para navegar, Enter para agregar)"
-          className="w-full rounded-xl border border-border bg-surface-2 py-3 pl-10 pr-3 text-base text-text placeholder:text-text-dim focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          placeholder="Escaneá o buscá por nombre o código… (↑↓ para navegar, Enter para agregar)"
+          className="w-full rounded-lg border border-border bg-surface-2 py-2.5 pl-10 pr-3 text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
       </div>
 
       {resultados.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-xl">
-          {resultados.map((p, i) => (
-            <button
-              key={p.id}
-              onClick={() => agregar(p)}
-              onMouseEnter={() => setHighlightIndex(i)}
-              className={`flex w-full items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 ${
-                i === highlightIndex ? 'bg-surface-2' : 'hover:bg-surface-2'
-              }`}
-            >
-              <div>
-                <div className="text-sm font-medium text-text">{p.nombre}</div>
-                <div className="text-xs text-text-dim">
-                  {p.codigo_barras || 'sin código'} · Stock: {p.stock}{p.venta_por_peso ? ` ${p.unidad_medida}` : ''}
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+          {resultados.map((p, i) => {
+            const conBolsa = tieneBolsa(p)
+            return (
+              <div
+                key={p.id}
+                // Con bolsa, la fila no agrega nada sola: sueltro y bolsa son
+                // dos botones explícitos, para no sumar la opción equivocada
+                // por un click a un costado del botón de bolsa.
+                onClick={() => !conBolsa && agregar(p, false)}
+                onMouseEnter={() => setHighlightIndex(i)}
+                className={`flex items-center justify-between gap-3 border-b border-border px-3 py-2 last:border-0 ${
+                  conBolsa ? '' : 'cursor-pointer'
+                } ${i === highlightIndex ? 'bg-surface-2' : 'hover:bg-surface-2'}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-text">{p.nombre}</div>
+                  <div className="text-xs text-text-dim">
+                    {p.codigo_barras || 'sin código'} · Stock: {p.stock}{p.venta_por_peso ? ` ${p.unidad_medida}` : ''}
+                  </div>
                 </div>
+
+                {conBolsa ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); agregar(p, false) }}
+                      className="rounded-lg border border-border px-2 py-1.5 text-xs tabular-nums text-text-dim hover:border-accent/50 hover:text-text"
+                    >
+                      Suelto · {formatMoney(p.precio_venta)}/{p.unidad_medida}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); agregar(p, true) }}
+                      className="rounded-lg border border-accent/40 bg-accent/10 px-2 py-1.5 text-xs tabular-nums text-accent hover:bg-accent/20"
+                    >
+                      Bolsa {Number(p.bolsa_kg)}kg · {formatMoney(p.precio_bolsa!)}
+                    </button>
+                  </div>
+                ) : (
+                  <span className="shrink-0 tabular-nums text-accent-2">
+                    {formatMoney(p.oferta_activa && p.precio_oferta ? p.precio_oferta : p.precio_venta)}
+                    {p.venta_por_peso && <span className="text-xs text-text-dim">/{p.unidad_medida}</span>}
+                  </span>
+                )}
               </div>
-              <div className="tabular-nums text-accent-2">
-                {formatMoney(p.oferta_activa && p.precio_oferta ? p.precio_oferta : p.precio_venta)}
-              </div>
-            </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import {
   Home, ShoppingCart, Package, TrendingUp, Warehouse, Tag, ClipboardList,
-  FileText, BarChart3, Eye, Users, Wallet,
-  Shield, UserCog, Truck, PackageSearch, ShoppingBag, UserRound, Settings,
+  FileText, BarChart3, Eye, Wallet,
+  Store, UserCog, Truck, PackageSearch, ShoppingBag, UserRound, Settings, Bike, Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -17,6 +17,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Inicio', path: '/home', icon: Home },
   { label: 'Venta', path: '/pos', icon: ShoppingCart },
+  { label: 'Asistente', path: '/asistente', icon: Sparkles },
   {
     label: 'Productos', path: '/productos', icon: Package,
     children: [
@@ -26,14 +27,8 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Historial de aumentos', path: '/productos/historial' },
     ],
   },
-  {
-    label: 'Inventario', path: '/inventario', icon: TrendingUp,
-    children: [
-      { label: 'Ranking rentabilidad', path: '/inventario/ranking' },
-      { label: 'Estado del inventario', path: '/inventario/stock' },
-    ],
-  },
-  { label: 'Depósito', path: '/deposito', icon: Warehouse },
+  { label: 'Stock', path: '/stock', icon: Warehouse },
+  { label: 'Ranking Rentabilidad', path: '/inventario/ranking', icon: TrendingUp },
   { label: 'Etiquetas', path: '/etiquetas', icon: Tag },
   {
     label: 'Ventas', path: '/ventas', icon: ClipboardList,
@@ -42,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Tickets', path: '/ventas/tickets' },
     ],
   },
+  { label: 'Repartos', path: '/repartos', icon: Bike },
   { label: 'Presupuestos', path: '/presupuestos', icon: FileText },
   {
     label: 'Estadísticas', path: '/estadisticas', icon: BarChart3,
@@ -53,14 +49,13 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: 'Verdad del Negocio', path: '/verdad-del-negocio', icon: Eye },
-  { label: 'CRM', path: '/crm', icon: Users },
   {
     label: 'Finanzas', path: '/finanzas', icon: Wallet,
     children: [
       { label: 'Gastos', path: '/finanzas/gastos' },
     ],
   },
-  { label: 'Admin', path: '/admin', icon: Shield },
+  { label: 'Sucursales', path: '/sucursales', icon: Store },
   { label: 'Empleados', path: '/empleados', icon: UserCog },
   { label: 'Proveedores', path: '/proveedores', icon: Truck },
   {

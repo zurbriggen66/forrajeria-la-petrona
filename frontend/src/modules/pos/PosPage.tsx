@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { CloudOff, Loader2, RefreshCcw } from 'lucide-react'
 import { useToast } from '../../context/ToastContext'
@@ -7,6 +8,8 @@ import { useCajaActual } from '../caja/api'
 import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
+import { cantidadInputId, precioUnitario } from './precio'
+import { PosStats } from './PosStats'
 import { ProductSearch } from './ProductSearch'
 import { QuickProducts } from './QuickProducts'
 import { TicketModal, type TicketData } from './TicketModal'
@@ -19,6 +22,7 @@ export function PosPage() {
   const { productos, loading: cargandoCatalogo, desdeCache } = useCatalogoPOS()
   const { online, pendientes, sincronizando } = useOfflineSync()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   // Sin conexión no podemos confirmar el estado de la caja: no bloqueamos el
   // POS (offline-first) y confiamos en que el backend valide al sincronizar.
   const { data: cajaActual, isLoading: cargandoCaja, isError: errorCaja } = useCajaActual()
@@ -26,41 +30,54 @@ export function PosPage() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [cobrando, setCobrando] = useState(false)
   const [ticket, setTicket] = useState<TicketData | null>(null)
+  // Producto a granel recién agregado: en cuanto el carrito lo renderiza, le
+  // pasamos el foco a su campo de peso — si no, queda cargado con "1" (kg
+  // asumidos) y nada le avisa al cajero que tiene que pesarlo y corregirlo.
+  const [enfocarPeso, setEnfocarPeso] = useState<string | null>(null)
 
   const subtotal = useMemo(
-    () =>
-      cart.reduce((acc, item) => {
-        const precio = item.producto.oferta_activa && item.producto.precio_oferta
-          ? Number(item.producto.precio_oferta)
-          : Number(item.producto.precio_venta)
-        return acc + precio * Number(item.cantidad)
-      }, 0),
+    () => cart.reduce((acc, item) => acc + precioUnitario(item) * Number(item.cantidad), 0),
     [cart],
   )
 
-  function agregarProducto(producto: Producto) {
+  useEffect(() => {
+    if (!enfocarPeso) return
+    const input = document.getElementById(enfocarPeso) as HTMLInputElement | null
+    input?.focus()
+    input?.select()
+    setEnfocarPeso(null)
+  }, [enfocarPeso])
+
+  function agregarProducto(producto: Producto, esBolsa: boolean) {
     setCart((prev) => {
-      const existente = prev.find((i) => i.producto.id === producto.id)
+      const existente = prev.find((i) => i.producto.id === producto.id && i.esBolsa === esBolsa)
       if (existente) {
-        const paso = producto.venta_por_peso ? 0.1 : 1
+        const paso = esBolsa ? 1 : producto.venta_por_peso ? 0.1 : 1
         return prev.map((i) =>
-          i.producto.id === producto.id ? { ...i, cantidad: String(Number(i.cantidad) + paso) } : i,
+          i.producto.id === producto.id && i.esBolsa === esBolsa
+            ? { ...i, cantidad: String(Number(i.cantidad) + paso) }
+            : i,
         )
       }
-      return [...prev, { producto: producto as CartItem['producto'], cantidad: producto.venta_por_peso ? '1' : '1' }]
+      return [...prev, { producto: producto as CartItem['producto'], cantidad: '1', esBolsa }]
     })
-  }
-
-  function cambiarCantidad(productoId: string, cantidad: string) {
-    if (Number(cantidad) <= 0) {
-      quitarProducto(productoId)
-      return
+    if (producto.venta_por_peso && !esBolsa) {
+      setEnfocarPeso(cantidadInputId(producto.id, esBolsa))
     }
-    setCart((prev) => prev.map((i) => (i.producto.id === productoId ? { ...i, cantidad } : i)))
   }
 
-  function quitarProducto(productoId: string) {
-    setCart((prev) => prev.filter((i) => i.producto.id !== productoId))
+  function cambiarCantidad(productoId: string, esBolsa: boolean, cantidad: string) {
+    // Sin guarda de "<=0 borra la línea": el stepper de +/- ya nunca baja de 1
+    // (Math.max(1, …) en Cart), y en el campo de peso a granel un "0"
+    // intermedio es normal mientras se tipea "0.350" — borrar la línea ahí
+    // se comía el producto apenas el cajero empezaba a escribir el peso real.
+    setCart((prev) =>
+      prev.map((i) => (i.producto.id === productoId && i.esBolsa === esBolsa ? { ...i, cantidad } : i)),
+    )
+  }
+
+  function quitarProducto(productoId: string, esBolsa: boolean) {
+    setCart((prev) => prev.filter((i) => !(i.producto.id === productoId && i.esBolsa === esBolsa)))
   }
 
   async function handleCobrar(datos: DatosCobro) {
@@ -69,11 +86,11 @@ export function PosPage() {
     try {
       const total = Math.max(subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0), 0)
       const resultado = await crearVenta({
-        items: cart.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad })),
+        items: cart.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa })),
         cliente: datos.cliente?.id ?? null,
         cuenta_pago: datos.cuentaPagoId || null,
+        pagos: datos.pagos.length > 0 ? datos.pagos : undefined,
         metodo_pago: datos.cuentaCorriente ? 'cuenta_corriente' : datos.cuentaPagoId ? '' : 'efectivo',
-        monto_efectivo: datos.cuentaCorriente ? undefined : datos.efectivoRecibido || undefined,
         monto_cuenta_corriente: datos.cuentaCorriente ? String(total) : undefined,
         efectivo_recibido: datos.cuentaCorriente ? null : datos.efectivoRecibido || null,
         descuento: datos.descuento,
@@ -82,6 +99,7 @@ export function PosPage() {
 
       if (resultado.status === 'ok') {
         setTicket({ kind: 'ok', venta: resultado.venta })
+        queryClient.invalidateQueries({ queryKey: ['estadisticas', 'resumen'] })
       } else {
         setTicket({ kind: 'queued', items: cart, total: subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0) })
       }
@@ -128,10 +146,12 @@ export function PosPage() {
         </div>
       )}
 
+      <PosStats />
+
       <div className="flex flex-1 gap-4 overflow-hidden">
-        <div className="flex flex-1 flex-col gap-3">
-          <QuickProducts productos={productos} onAgregar={agregarProducto} />
+        <div className="flex flex-1 flex-col gap-3 overflow-hidden">
           <ProductSearch productos={productos} onAgregar={agregarProducto} />
+          <QuickProducts productos={productos} onAgregar={agregarProducto} />
           <Cart items={cart} onCambiarCantidad={cambiarCantidad} onQuitar={quitarProducto} onVaciar={() => setCart([])} />
         </div>
 

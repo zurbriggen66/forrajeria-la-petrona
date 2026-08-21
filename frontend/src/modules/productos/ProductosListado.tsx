@@ -1,15 +1,19 @@
 import { useState } from 'react'
-import { AlertTriangle, Loader2, Pencil, Plus, Search } from 'lucide-react'
+import { AlertTriangle, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Table, type Column } from '../../components/ui/Table'
+import { useToast } from '../../context/ToastContext'
+import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney, formatPct } from '../../lib/format'
-import { useCategorias, useProductos } from './api'
+import { useCategorias, useDeleteProducto, useProductos } from './api'
 import { ProductoFormModal } from './ProductoFormModal'
+import { formatCantidadStock } from './stock'
 import type { Producto } from './types'
 
 export function ProductosListado() {
+  const { toast } = useToast()
   const [search, setSearch] = useState('')
   const [categoria, setCategoria] = useState('')
   const [modal, setModal] = useState<'new' | Producto | null>(null)
@@ -18,8 +22,20 @@ export function ProductosListado() {
   const { data, isLoading, isError } = useProductos({
     search: search || undefined,
     categoria: categoria || undefined,
+    activo: true,
     ordering: 'nombre',
   })
+  const eliminar = useDeleteProducto()
+
+  async function handleEliminar(p: Producto) {
+    if (!window.confirm(`¿Eliminar "${p.nombre}"? Si ya tiene ventas registradas, se va a desactivar en vez de borrarse.`)) return
+    try {
+      await eliminar.mutateAsync(p.id)
+      toast('Producto eliminado')
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo eliminar el producto'), 'error')
+    }
+  }
 
   const columns: Column<Producto>[] = [
     {
@@ -40,7 +56,7 @@ export function ProductosListado() {
       render: (p) => (
         <span className={`inline-flex items-center gap-1 tabular-nums ${p.stock_bajo ? 'text-warning' : 'text-text'}`}>
           {p.stock_bajo && <AlertTriangle size={13} />}
-          {p.stock}{p.venta_por_peso ? ` ${p.unidad_medida}` : ''}
+          {formatCantidadStock(p.stock, p)}
         </span>
       ),
     },
@@ -48,9 +64,14 @@ export function ProductosListado() {
       header: '',
       className: 'text-right',
       render: (p) => (
-        <button onClick={() => setModal(p)} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar ${p.nombre}`}>
-          <Pencil size={15} />
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={() => setModal(p)} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar ${p.nombre}`}>
+            <Pencil size={15} />
+          </button>
+          <button onClick={() => handleEliminar(p)} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar ${p.nombre}`}>
+            <Trash2 size={15} />
+          </button>
+        </div>
       ),
     },
   ]

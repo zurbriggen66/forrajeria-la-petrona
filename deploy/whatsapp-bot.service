@@ -1,0 +1,23 @@
+# Bot de WhatsApp (Baileys). Escucha en 127.0.0.1:3001; sólo Django le habla.
+#
+#   sudo cp deploy/whatsapp-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now whatsapp-bot
+
+[Unit]
+Description=Bot de WhatsApp — Forrajeria La Petrona
+After=network.target
+
+[Service]
+User=petrona
+# CRITICO: Baileys usa useMultiFileAuthState("auth"), que es relativo al
+# directorio de trabajo. Si el servicio arranca desde otro lado crea un auth/
+# vacio y pide escanear el QR en cada reinicio.
+WorkingDirectory=/home/petrona/app/whatsapp-bot
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

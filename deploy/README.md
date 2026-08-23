@@ -101,6 +101,17 @@ cd backend
 
 ## 7. Cargar los datos (una sola vez)
 
+> **Los datos ya están en el repo**, en `deploy/seed.json` (20 MB, 21.905
+> objetos: 8.069 ventas, 6.482 productos, 179 clientes, 21 proveedores).
+> Si vas a usar ese archivo, saltá directo al `loaddata` de abajo — no hace
+> falta generar ni copiar nada.
+>
+> Contiene **datos personales de clientes reales** (nombres, teléfonos, CUIT,
+> saldos). El repositorio tiene que seguir siendo privado.
+>
+> Para regenerarlo con datos más nuevos, usá el `dumpdata` de acá abajo.
+
+
 **En tu máquina:**
 
 ```bash
@@ -130,7 +141,7 @@ Los certificados de ARCA **no están en git** (correcto), por eso van por SCP.
 ```bash
 cd ~/app/backend
 chmod 600 fiscal_certs/*.key
-../venv/bin/python manage.py loaddata seed.json
+../venv/bin/python manage.py loaddata ../deploy/seed.json
 ```
 
 Comprobá que los conteos coincidan antes de dar la migración por buena:

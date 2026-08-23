@@ -14,4 +14,7 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
-seed.json
+# Los volcados sueltos en la raíz (los que genera el runbook) quedan fuera.
+# El de deploy/seed.json va versionado a propósito: es la carga inicial de
+# datos del comercio, y el repo es privado.
+/seed.json

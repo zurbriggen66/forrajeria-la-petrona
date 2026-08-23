@@ -105,12 +105,21 @@ cd backend
 
 ```bash
 cd backend
-python manage.py dumpdata --natural-foreign --natural-primary \
+PYTHONUTF8=1 python manage.py dumpdata --natural-foreign --natural-primary \
   -e contenttypes -e auth.Permission -e admin.logentry -e sessions \
   --indent 2 -o seed.json
 
 scp seed.json petrona@IP_DEL_VPS:~/app/backend/
 scp fiscal_certs/laspetrona-pos.{crt,key,csr} petrona@IP_DEL_VPS:~/app/backend/fiscal_certs/
+```
+
+`PYTHONUTF8=1` **no es opcional en Windows**: sin eso `dumpdata -o` escribe el
+archivo en cp1252 y el `loaddata` del servidor muere con
+`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xed` en la primera tilde
+("Forrajería", "Gómez"). Verificalo antes de subirlo:
+
+```bash
+python -c "open('seed.json','rb').read().decode('utf-8'); print('utf-8 OK')"
 ```
 
 Las exclusiones evitan choques de IDs de content types contra una base nueva.
@@ -135,7 +144,9 @@ print('productos', Producto.objects.count(), '| clientes', Cliente.objects.count
 "
 ```
 
-Esperado: **8.068** ventas (92 anuladas), **6.482** productos, **179** clientes.
+Esperado: **8.069** ventas (93 anuladas), **6.482** productos, **179** clientes,
+**21** proveedores. El ciclo completo ya se probó localmente contra una base
+vacía: 21.905 objetos cargados, sin errores.
 
 Después borrá `seed.json` **de los dos lados** — es un volcado con datos
 personales de clientes reales.

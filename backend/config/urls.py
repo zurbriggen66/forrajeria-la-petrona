@@ -5,12 +5,13 @@ URL configuration for TIENDA-IA (config project).
 - /api/auth/token/            — login (JWT: access + refresh)
 - /api/auth/token/refresh/    — refresh de access token
 - /api/auth/me/               — perfil del usuario autenticado + comercios que opera
-- /api/schema/, /api/docs/    — OpenAPI schema y Swagger UI (drf-spectacular)
+- /api/schema/, /api/docs/    — OpenAPI schema y Swagger UI (sólo con DEBUG)
 
 Los endpoints por módulo (productos, ventas, caja, ...) se agregan fase a fase
 siguiendo ROADMAP.md, montados bajo /api/<modulo>/.
 """
 
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -34,6 +35,12 @@ urlpatterns = [
     path("api/estadisticas/", include("estadisticas.urls")),
     path("api/admin/", include("admin_saas.urls")),
     path("api/fiscal/", include("fiscal.urls")),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]
+
+# La documentación de la API describe todos los endpoints y su forma: útil
+# mientras se desarrolla, innecesario en el servidor del comercio.
+if settings.DEBUG:
+    urlpatterns += [
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+        path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
+    ]

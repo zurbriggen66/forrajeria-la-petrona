@@ -107,4 +107,9 @@ app.post("/disconnect", async (req, res) => {
 });
 
 conectar();
-app.listen(PORT, () => console.log(`whatsapp-bot escuchando en :${PORT}`));
+// Sólo loopback: el único que le habla es Django, desde la misma máquina
+// (core/whatsapp.py). Bindear a 0.0.0.0 dejaría /send accesible desde afuera,
+// y si API_KEY viene vacía la verificación de arriba se saltea entera.
+app.listen(PORT, "127.0.0.1", () =>
+  console.log(`whatsapp-bot escuchando en 127.0.0.1:${PORT}`)
+);

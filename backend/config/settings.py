@@ -15,7 +15,9 @@ env = environ.Env(
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("SECRET_KEY", default="django-insecure-change-me-in-.env")
+# Sin default a propósito: si falta SECRET_KEY tiene que romper el arranque,
+# no bootear en silencio con una clave conocida y firmar sesiones con eso.
+SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
@@ -117,8 +119,29 @@ USE_TZ = True
 # Static files
 
 STATIC_URL = "static/"
+# Destino de collectstatic. En producción nginx sirve /static/ desde acá; sin
+# esto collectstatic ni siquiera corre y el admin queda sin estilos.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# ---------------------------------------------------------------------------
+# Producción — nada de esto hace falta con runserver en localhost.
+# ---------------------------------------------------------------------------
+# Detrás de nginx, Django ve HTTP aunque el navegador hable HTTPS. Sin esto se
+# arma un loop de redirecciones con SECURE_SSL_REDIRECT y request.is_secure()
+# miente.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Django exige el origen exacto (con esquema) para POST del admin sobre HTTPS;
+# ALLOWED_HOSTS no alcanza y el login devuelve 403.
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
 
 
 # ---------------------------------------------------------------------------

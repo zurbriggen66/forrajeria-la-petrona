@@ -31,3 +31,8 @@ setuptools
 
 # Asistente con IA (Claude) — opcional; sin la API key el asistente queda apagado.
 anthropic
+
+# Producción. En desarrollo no hacen falta: runserver alcanza y la base es
+# SQLite. Sin psycopg, poner un DATABASE_URL de Postgres revienta al arrancar.
+gunicorn
+psycopg[binary]

@@ -3,11 +3,13 @@ import { AlertTriangle, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-rea
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
+import { Paginacion } from '../../components/ui/Paginacion'
 import { Table, type Column } from '../../components/ui/Table'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney, formatPct } from '../../lib/format'
-import { useCategorias, useDeleteProducto, useProductos } from './api'
+import { useDebounce } from '../../lib/useDebounce'
+import { PRODUCTOS_POR_PAGINA, useCategorias, useDeleteProducto, useProductos } from './api'
 import { ProductoFormModal } from './ProductoFormModal'
 import { formatCantidadStock } from './stock'
 import type { Producto } from './types'
@@ -16,16 +18,26 @@ export function ProductosListado() {
   const { toast } = useToast()
   const [search, setSearch] = useState('')
   const [categoria, setCategoria] = useState('')
+  const [pagina, setPagina] = useState(1)
   const [modal, setModal] = useState<'new' | Producto | null>(null)
 
+  const searchDiferido = useDebounce(search)
   const { data: categorias } = useCategorias()
   const { data, isLoading, isError } = useProductos({
-    search: search || undefined,
+    search: searchDiferido || undefined,
     categoria: categoria || undefined,
     activo: true,
     ordering: 'nombre',
+    page: pagina,
   })
   const eliminar = useDeleteProducto()
+
+  /** Cambiar un filtro tiene que volver a la página 1: si estabas en la 40 y
+   * filtrás algo con 3 resultados, la 40 no existe y la tabla sale vacía. */
+  function filtrar(cambio: () => void) {
+    cambio()
+    setPagina(1)
+  }
 
   async function handleEliminar(p: Producto) {
     if (!window.confirm(`¿Eliminar "${p.nombre}"? Si ya tiene ventas registradas, se va a desactivar en vez de borrarse.`)) return
@@ -83,10 +95,10 @@ export function ProductosListado() {
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
           <Input
             id="search" placeholder="Buscar por nombre o código de barras…"
-            value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9"
+            value={search} onChange={(e) => filtrar(() => setSearch(e.target.value))} className="pl-9"
           />
         </div>
-        <Select id="filtro-categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-52">
+        <Select id="filtro-categoria" value={categoria} onChange={(e) => filtrar(() => setCategoria(e.target.value))} className="w-52">
           <option value="">Todas las categorías</option>
           {categorias?.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
         </Select>
@@ -116,7 +128,9 @@ export function ProductosListado() {
             rowKey={(p) => p.id}
             emptyMessage={search || categoria ? 'No hay productos que coincidan con el filtro.' : 'Todavía no cargaste productos.'}
           />
-          <p className="text-xs text-text-dim">{data.count} producto{data.count === 1 ? '' : 's'}</p>
+          <Paginacion
+            pagina={pagina} porPagina={PRODUCTOS_POR_PAGINA} total={data.count} onCambiar={setPagina}
+          />
         </>
       )}
 

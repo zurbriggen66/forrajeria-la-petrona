@@ -3,6 +3,22 @@ from core.models import TenantModel
 from ventas.models import Venta
 
 
+def medios_de_pago(venta):
+    """Tipos de medio con los que se cobró una venta: {'efectivo',
+    'transferencia', ...}. Sale del desglose real (VentaPago) y no del texto
+    `metodo_pago`, que en un pago mixto dice sólo "mixto".
+
+    Lo fiado no pasa por ninguna cuenta, así que se deduce aparte."""
+    tipos = {
+        p.cuenta_pago.tipo
+        for p in venta.pagos.all()
+        if p.cuenta_pago_id and p.cuenta_pago.tipo
+    }
+    if venta.monto_cuenta_corriente and venta.monto_cuenta_corriente > 0:
+        tipos.add("cuenta_corriente")
+    return tipos
+
+
 class ComercioFiscalConfig(TenantModel):
     CONDICIONES_IVA = [
         ("monotributo", "Monotributo"),
@@ -24,6 +40,31 @@ class ComercioFiscalConfig(TenantModel):
     # False recién cuando el certificado de producción esté cargado y confirmado.
     homologacion = models.BooleanField(default=True)
     activo = models.BooleanField(default=True)
+
+    # --- Facturación automática -------------------------------------------
+    # Qué ventas se facturan solas al cobrarlas, sin que el cajero apriete
+    # "Facturar". Apagado por defecto: emitir un CAE es irreversible.
+    facturar_automatico = models.BooleanField(default=False)
+    # Tipos de CuentaPago que disparan la factura (efectivo | tarjeta |
+    # transferencia | cuenta_corriente). Una venta con pago mixto entra si
+    # CUALQUIERA de sus medios está en la lista: si algo entró por
+    # transferencia, quedó registrado en el banco y hay que facturarlo.
+    facturar_medios = models.JSONField(default=list, blank=True)
+    # Piso opcional: 0 = sin mínimo.
+    facturar_monto_minimo = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    def debe_facturarse(self, venta):
+        """¿Esta venta entra en la regla de facturación automática?"""
+        if not self.facturar_automatico or not self.activo:
+            return False
+        if venta.anulada or venta.facturado or venta.excluir_fiscal:
+            return False
+        if self.facturar_monto_minimo and venta.total < self.facturar_monto_minimo:
+            return False
+        medios = set(self.facturar_medios or [])
+        if not medios:
+            return False
+        return bool(medios & medios_de_pago(venta))
 
 
 class FiscalBatch(TenantModel):

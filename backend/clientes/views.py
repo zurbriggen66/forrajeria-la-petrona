@@ -96,9 +96,25 @@ class ClienteViewSet(TenantViewSet):
 
     queryset = Cliente.objects.all().order_by("nombre")
     serializer_class = ClienteSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["activo", "tipo"]
     search_fields = ["nombre", "telefono", "celular", "cuit"]
+    ordering_fields = ["nombre"]
+
+    def get_queryset(self):
+        """Filtro por deuda del lado del servidor.
+
+        Antes se hacía en el navegador sobre la página ya traída, lo que con
+        la lista paginada daría un resultado falso: "los que deben" mostraría
+        sólo los deudores de la página actual, no los del comercio.
+        """
+        qs = super().get_queryset()
+        deuda = self.request.query_params.get("deuda")
+        if deuda == "deben":
+            qs = qs.filter(saldo_actual__gt=0)
+        elif deuda == "al_dia":
+            qs = qs.filter(saldo_actual__lte=0)
+        return qs
 
     @action(detail=True, methods=["get"])
     def movimientos(self, request, pk=None):

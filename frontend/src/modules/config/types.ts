@@ -14,6 +14,7 @@ export interface ComercioConfig {
   email: string
   logo_url: string
   rubro: string
+  permitir_venta_sin_stock: boolean
 }
 
 export type ComercioConfigInput = Partial<Omit<ComercioConfig, 'id'>>

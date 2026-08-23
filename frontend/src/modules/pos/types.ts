@@ -22,6 +22,8 @@ export interface VentaInput {
   monto_transferencia?: string
   monto_cuenta_corriente?: string
   efectivo_recibido?: string | null
+  /** Cuenta desde la que se da el vuelto, si es distinta de la que cobra. */
+  vuelto_cuenta_pago?: string | null
   descuento?: string
   recargo_monto?: string
   origen?: string
@@ -63,6 +65,8 @@ export interface VentaResult {
   monto_cuenta_corriente: string
   efectivo_recibido: string | null
   vuelto: string | null
+  vuelto_cuenta_pago: string | null
+  vuelto_cuenta_pago_nombre: string | null
   origen: string
   anulada: boolean
   created_at: string

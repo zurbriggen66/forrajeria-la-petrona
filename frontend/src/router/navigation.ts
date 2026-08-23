@@ -1,7 +1,7 @@
 import {
   Home, ShoppingCart, Package, TrendingUp, Warehouse, Tag, ClipboardList,
   FileText, BarChart3, Eye, Wallet,
-  Store, UserCog, Truck, PackageSearch, ShoppingBag, UserRound, Settings, Bike, Sparkles,
+  Store, UserCog, Truck, ShoppingBag, UserRound, Settings, Bike, Sparkles, Calculator,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -48,24 +48,27 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Mapa Neural', path: '/estadisticas/mapa-neural' },
     ],
   },
-  { label: 'Verdad del Negocio', path: '/verdad-del-negocio', icon: Eye },
   {
-    label: 'Finanzas', path: '/finanzas', icon: Wallet,
+    label: 'Contabilidad', path: '/contabilidad', icon: Calculator,
     children: [
-      { label: 'Gastos', path: '/finanzas/gastos' },
+      { label: 'Resultado y caja', path: '/contabilidad/resultado' },
+      { label: 'Mes a mes', path: '/contabilidad/mes-a-mes' },
+      { label: 'Deudas', path: '/contabilidad/deudas' },
     ],
   },
+  { label: 'Verdad del Negocio', path: '/verdad-del-negocio', icon: Eye },
   { label: 'Sucursales', path: '/sucursales', icon: Store },
   { label: 'Empleados', path: '/empleados', icon: UserCog },
   { label: 'Proveedores', path: '/proveedores', icon: Truck },
   {
-    label: 'Pedidos', path: '/pedidos', icon: PackageSearch,
+    label: 'Compras', path: '/compras', icon: ShoppingBag,
     children: [
-      { label: 'Sugeridos', path: '/pedidos/sugeridos' },
-      { label: 'Manuales', path: '/pedidos/manuales' },
+      { label: 'Registro de compras', path: '/compras/registro' },
+      { label: 'Gastos variables', path: '/compras/gastos-variables' },
+      { label: 'Gastos fijos', path: '/compras/gastos-fijos' },
+      { label: 'Pedidos a proveedores', path: '/compras/pedidos' },
     ],
   },
-  { label: 'Compras', path: '/compras', icon: ShoppingBag },
   {
     label: 'Caja', path: '/caja', icon: Wallet,
     children: [
@@ -80,8 +83,14 @@ export const NAV_ITEMS: NavItem[] = [
 ]
 
 // Rutas planas (padres + hijas) para armar <Route> y para que el topbar
-// resuelva el título del módulo actual a partir del path.
-export const FLAT_ROUTES: { label: string; path: string }[] = NAV_ITEMS.flatMap((item) => [
+// resuelva el título del módulo actual a partir del path. El padre de una
+// sección también necesita ruta propia: al tocar su ícono en la barra se
+// entra por ahí y SeccionPage abre la primera pestaña. Deduplicado por path
+// por las dudas de que un padre repita el path de una hija.
+const RUTAS_CON_DUPLICADOS = NAV_ITEMS.flatMap((item) => [
   { label: item.label, path: item.path },
   ...(item.children ?? []),
 ])
+export const FLAT_ROUTES: { label: string; path: string }[] = [
+  ...new Map(RUTAS_CON_DUPLICADOS.map((r) => [r.path, r])).values(),
+]

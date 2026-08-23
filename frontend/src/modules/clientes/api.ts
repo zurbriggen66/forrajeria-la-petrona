@@ -12,16 +12,25 @@ import type {
 export interface ClientesQuery {
   search?: string
   activo?: boolean
+  /** Filtra por saldo de cuenta corriente. Se resuelve en el servidor: sobre
+   * la lista paginada, filtrar en el navegador daría un resultado falso. */
+  deuda?: 'deben' | 'al_dia'
   ordering?: string
+  page?: number
 }
+
+export const CLIENTES_POR_PAGINA = 50
 
 export function useClientes(params: ClientesQuery = {}) {
   return useQuery({
     queryKey: ['clientes-listado', params],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<Cliente>>('/clientes/', { params: { page_size: 100, ...params } })
+      const { data } = await api.get<Paginated<Cliente>>('/clientes/', {
+        params: { page_size: CLIENTES_POR_PAGINA, ...params },
+      })
       return data
     },
+    placeholderData: (previa) => previa,
   })
 }
 
@@ -42,6 +51,16 @@ export function useUpdateCliente() {
     mutationFn: async ({ id, input }: { id: string; input: ClienteInput }) => {
       const { data } = await api.patch<Cliente>(`/clientes/${id}/`, input)
       return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['clientes-listado'] }),
+  })
+}
+
+export function useEliminarCliente() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/clientes/${id}/`)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['clientes-listado'] }),
   })

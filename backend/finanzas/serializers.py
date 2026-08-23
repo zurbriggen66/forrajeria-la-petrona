@@ -13,6 +13,6 @@ class GastoSerializer(serializers.ModelSerializer):
         model = Gasto
         fields = [
             "id", "caja_sesion", "cuenta", "cuenta_nombre", "cuenta_id",
-            "categoria", "descripcion", "monto", "fecha", "created_at",
+            "tipo", "categoria", "descripcion", "monto", "fecha", "created_at",
         ]
         read_only_fields = ["id", "caja_sesion", "cuenta", "created_at"]

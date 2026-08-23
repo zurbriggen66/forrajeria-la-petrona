@@ -14,6 +14,7 @@ import {
   useAsignacionesCliente,
   useAsignarVendedor,
   useDesactivarAsignacion,
+  useEliminarCliente,
   useEliminarMovimientoCliente,
   useMovimientosCliente,
 } from './api'
@@ -105,8 +106,23 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   const { data: movimientos, isLoading: cargandoMovimientos } = useMovimientosCliente(cliente.id)
   const { data: ventasData, isLoading: cargandoVentas } = useVentas({ cliente: cliente.id })
   const eliminarMovimiento = useEliminarMovimientoCliente(cliente.id)
+  const eliminarCliente = useEliminarCliente()
 
   const disponible = Number(cliente.limite_credito) - Number(cliente.saldo_actual)
+
+  async function handleEliminarCliente() {
+    const aviso = Number(cliente.saldo_actual) > 0
+      ? `${cliente.nombre} tiene un saldo pendiente de ${formatMoney(cliente.saldo_actual)}. `
+      : ''
+    if (!window.confirm(`${aviso}¿Eliminar a ${cliente.nombre}? Sus ventas quedan en el historial, pero sin cliente asociado.`)) return
+    try {
+      await eliminarCliente.mutateAsync(cliente.id)
+      toast('Cliente eliminado')
+      onClose()
+    } catch (err) {
+      toast(extraerMensajeError(err, 'No se pudo eliminar el cliente'), 'error')
+    }
+  }
 
   async function handleEliminar(m: ClienteMovimiento) {
     if (!window.confirm('¿Borrar este movimiento? El saldo del cliente se recalcula solo.')) return
@@ -174,9 +190,17 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-dim">
           <span>{cliente.telefono || cliente.celular || 'Sin teléfono'} · {cliente.email || 'sin email'}</span>
-          <button onClick={() => setEditando(true)} className="flex items-center gap-1 text-accent hover:underline">
-            <Pencil size={13} /> Editar datos
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setEditando(true)} className="flex items-center gap-1 text-accent hover:underline">
+              <Pencil size={13} /> Editar datos
+            </button>
+            <button
+              onClick={handleEliminarCliente} disabled={eliminarCliente.isPending}
+              className="flex items-center gap-1 text-danger hover:underline"
+            >
+              <Trash2 size={13} /> Eliminar cliente
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">

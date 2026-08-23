@@ -65,6 +65,52 @@ export function useQuitarUsuario() {
   })
 }
 
+export function useCambiarUsuario() {
+  return useMutation({
+    mutationFn: async (username: string) => {
+      const { data } = await api.patch<{ username: string }>('/auth/me/usuario/', { username })
+      return data
+    },
+  })
+}
+
+export function useCambiarPassword() {
+  return useMutation({
+    mutationFn: async (input: { password_actual: string; password_nueva: string }) => {
+      await api.post('/auth/me/password/', input)
+    },
+  })
+}
+
+export interface EstadoWhatsApp {
+  estado: 'conectado' | 'esperando_qr' | 'desconectado' | 'conectando' | 'no_configurado' | 'sin_conexion'
+  qr: string | null
+}
+
+export function useEstadoWhatsApp() {
+  return useQuery({
+    queryKey: ['whatsapp-estado'],
+    queryFn: async () => {
+      const { data } = await api.get<EstadoWhatsApp>('/auth/whatsapp/estado/')
+      return data
+    },
+    // Mientras se está vinculando conviene refrescar solo: el QR expira y el
+    // estado cambia a "conectado" apenas el dueño escanea desde el celular.
+    refetchInterval: (query) => (query.state.data?.estado === 'esperando_qr' ? 4000 : 15000),
+  })
+}
+
+export function useDesconectarWhatsApp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post<EstadoWhatsApp>('/auth/whatsapp/desconectar/')
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['whatsapp-estado'] }),
+  })
+}
+
 export function useDescargarRespaldo() {
   return useMutation({
     mutationFn: async () => {

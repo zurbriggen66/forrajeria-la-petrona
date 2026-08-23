@@ -26,6 +26,21 @@ export function useClientesSearch(search: string) {
   })
 }
 
+/** Para el selector "Ver todos": lista completa y paginada, con o sin texto
+ * de búsqueda, para cuando no se acuerda cómo quedó agendado el cliente. */
+export function useClientesBrowse(search: string, page: number) {
+  return useQuery({
+    queryKey: ['clientes-browse', search, page],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<Cliente>>('/clientes/', {
+        params: { page_size: 15, page, activo: true, ...(search ? { search } : {}) },
+      })
+      return data
+    },
+    placeholderData: (previa) => previa,
+  })
+}
+
 export type ResultadoVenta =
   | { status: 'ok'; venta: VentaResult }
   | { status: 'queued' }

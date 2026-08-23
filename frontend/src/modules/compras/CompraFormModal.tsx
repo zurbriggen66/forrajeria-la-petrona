@@ -10,6 +10,7 @@ import { formatMoney } from '../../lib/format'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
 import { useProveedores } from '../proveedores/api'
+import { useCuentasPago } from '../caja/api'
 import { useCreateCompra } from './api'
 
 interface Row {
@@ -29,12 +30,15 @@ function filaVacia(): Row {
 export function CompraFormModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast()
   const { data: proveedores } = useProveedores({ activo: true })
+  const { data: cuentas } = useCuentasPago(true)
   const createCompra = useCreateCompra()
 
   const [proveedor, setProveedor] = useState('')
   const [numeroFactura, setNumeroFactura] = useState('')
   const [fecha, setFecha] = useState(hoyISO())
   const [pagado, setPagado] = useState(false)
+  const [fechaVencimiento, setFechaVencimiento] = useState('')
+  const [cuentaPago, setCuentaPago] = useState('')
   const [items, setItems] = useState<Row[]>([filaVacia()])
 
   function updateItem(index: number, patch: Partial<Row>) {
@@ -72,7 +76,9 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
         proveedor: proveedor || null,
         numero_factura: numeroFactura,
         fecha,
+        fecha_vencimiento: pagado ? null : fechaVencimiento || null,
         pagado,
+        cuenta_pago: pagado ? cuentaPago || null : null,
         items: validItems.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, costo_unitario: i.costo_unitario })),
       })
       toast('Compra registrada')
@@ -136,17 +142,48 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <label className="flex items-center gap-2 text-sm text-text-dim">
-            <input type="checkbox" checked={pagado} onChange={(e) => setPagado(e.target.checked)} />
-            Ya está pagada
-          </label>
-          <span className="font-display text-lg font-semibold tabular-nums text-text">Total {formatMoney(total)}</span>
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1 rounded-lg bg-surface-2 p-1">
+              <button
+                type="button" onClick={() => setPagado(true)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  pagado ? 'bg-accent/15 text-accent' : 'text-text-dim hover:text-text'
+                }`}
+              >
+                Pagada ahora
+              </button>
+              <button
+                type="button" onClick={() => setPagado(false)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  !pagado ? 'bg-accent/15 text-accent' : 'text-text-dim hover:text-text'
+                }`}
+              >
+                Fiada (pago después)
+              </button>
+            </div>
+            <span className="font-display text-lg font-semibold tabular-nums text-text">Total {formatMoney(total)}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {pagado ? (
+              <Select id="cuenta-pago" label="Pagado desde" value={cuentaPago} onChange={(e) => setCuentaPago(e.target.value)}>
+                <option value="">Efectivo (por defecto)</option>
+                {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </Select>
+            ) : (
+              <Input
+                id="fecha-vencimiento" label="Vence el (opcional)" type="date"
+                value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)}
+              />
+            )}
+          </div>
         </div>
 
         <p className="text-xs text-text-dim">
-          El costo cargado queda como nuevo precio de costo de cada producto. Si está pagada y hay una caja
-          abierta, se descuenta también del arqueo del turno.
+          {pagado
+            ? 'El costo cargado queda como nuevo precio de costo de cada producto. Con la caja abierta, el pago se descuenta del arqueo del turno.'
+            : 'La mercadería entra al stock hoy y la deuda va a la cuenta corriente del proveedor, pero no sale plata de la caja. Después registrás el pago desde el listado — el gasto va a contar el día que pagues, no hoy.'}
         </p>
 
         <div className="flex justify-end gap-3">

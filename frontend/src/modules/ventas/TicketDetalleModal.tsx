@@ -72,7 +72,9 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
           )}
           {venta.vuelto && Number(venta.vuelto) > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-text-dim">Vuelto</span>
+              <span className="text-text-dim">
+                Vuelto{venta.vuelto_cuenta_pago_nombre ? ` (por ${venta.vuelto_cuenta_pago_nombre})` : ''}
+              </span>
               <span className="tabular-nums text-accent-2">{formatMoney(venta.vuelto)}</span>
             </div>
           )}

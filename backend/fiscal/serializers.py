@@ -9,6 +9,7 @@ class ComercioFiscalConfigSerializer(serializers.ModelSerializer):
         fields = [
             "id", "cuit", "razon_social", "punto_venta", "condicion_iva",
             "es_principal", "cert_ref", "homologacion", "activo",
+            "facturar_automatico", "facturar_medios", "facturar_monto_minimo",
         ]
         read_only_fields = ["id"]
 

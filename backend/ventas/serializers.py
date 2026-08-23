@@ -47,6 +47,9 @@ class VentaCreateSerializer(serializers.Serializer):
     monto_transferencia = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     monto_cuenta_corriente = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     efectivo_recibido = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True, default=None)
+    # Cuenta desde la que se da el vuelto, si es distinta de la que cobra la
+    # venta. Sin esto (o si coincide con la cuenta de cobro) no cambia nada.
+    vuelto_cuenta_pago = serializers.UUIDField(required=False, allow_null=True, default=None)
     descuento = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     recargo_monto = serializers.DecimalField(max_digits=14, decimal_places=2, default=0)
     origen = serializers.CharField(required=False, default="pos")
@@ -82,6 +85,7 @@ class VentaSerializer(serializers.ModelSerializer):
     cliente_nombre = serializers.CharField(source="cliente.nombre", read_only=True, default=None)
     vendedor_nombre = serializers.CharField(source="vendedor.nombre_completo", read_only=True, default=None)
     cuenta_pago_nombre = serializers.CharField(source="cuenta_pago.nombre", read_only=True, default=None)
+    vuelto_cuenta_pago_nombre = serializers.CharField(source="vuelto_cuenta_pago.nombre", read_only=True, default=None)
     qr_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -91,7 +95,7 @@ class VentaSerializer(serializers.ModelSerializer):
             "cliente", "cliente_nombre", "cuenta_pago", "cuenta_pago_nombre",
             "total", "descuento", "recargo_monto", "metodo_pago",
             "monto_efectivo", "monto_tarjeta", "monto_transferencia", "monto_cuenta_corriente",
-            "efectivo_recibido", "vuelto", "origen",
+            "efectivo_recibido", "vuelto", "vuelto_cuenta_pago", "vuelto_cuenta_pago_nombre", "origen",
             "anulada", "motivo_anulacion", "fecha_anulacion", "created_at", "items", "pagos",
             "facturado", "cae", "cae_vencimiento", "tipo_factura",
             "numero_factura", "punto_venta_factura", "qr_url",

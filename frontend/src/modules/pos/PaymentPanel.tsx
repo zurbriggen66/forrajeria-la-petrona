@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Check, Loader2, Plus, UserRound, Wallet, X } from 'lucide-react'
+import { Check, List, Loader2, Plus, UserRound, Wallet, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { formatMoney } from '../../lib/format'
 import { useClientesSearch, useCuentasPago } from './api'
+import { ClienteSelectorModal } from './ClienteSelectorModal'
 import type { Cliente } from './types'
 
 const CUENTA_CORRIENTE = 'cuenta_corriente'
@@ -44,6 +45,8 @@ export interface DatosCobro {
   descuento: string
   recargoMonto: string
   efectivoRecibido: string
+  /** Cuenta desde la que se da el vuelto. Vacío = misma cuenta que cobró (default). */
+  vueltoCuentaPagoId: string
   /** Desglose del cobro mixto. Vacío = cobro con un solo medio. */
   pagos: { cuenta_pago: string | null; monto: string }[]
 }
@@ -61,9 +64,11 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
   const [descuento, setDescuento] = useState('0')
   const [recargoMonto, setRecargoMonto] = useState('0')
   const [efectivoRecibido, setEfectivoRecibido] = useState('')
+  const [vueltoCuentaPagoId, setVueltoCuentaPagoId] = useState('')
   const [pagos, setPagos] = useState<LineaPago[]>([])
   const [busquedaCliente, setBusquedaCliente] = useState('')
   const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [mostrarSelector, setMostrarSelector] = useState(false)
   const { data: clientesEncontrados } = useClientesSearch(busquedaCliente)
 
   const esCuentaCorriente = cuentaPagoId === CUENTA_CORRIENTE
@@ -120,24 +125,40 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
             </button>
           </div>
         ) : (
-          <div className="relative">
-            <Input
-              id="cliente-search" placeholder="Consumidor final (opcional)" className="mt-1.5"
-              value={busquedaCliente} onChange={(e) => setBusquedaCliente(e.target.value)}
-            />
-            {clientesEncontrados && clientesEncontrados.length > 0 && (
-              <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
-                {clientesEncontrados.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setCliente(c); setBusquedaCliente('') }}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-surface-2"
-                  >
-                    {c.nombre}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            <div className="relative flex gap-1.5">
+              <Input
+                id="cliente-search" placeholder="Consumidor final (opcional)" className="flex-1"
+                value={busquedaCliente} onChange={(e) => setBusquedaCliente(e.target.value)}
+              />
+              <button
+                type="button" onClick={() => setMostrarSelector(true)}
+                title="Ver todos los clientes"
+                className="flex shrink-0 items-center justify-center rounded-lg border border-border px-2.5 text-text-dim hover:border-accent/50 hover:text-text"
+              >
+                <List size={15} />
+              </button>
+              {clientesEncontrados && clientesEncontrados.length > 0 && (
+                <div className="absolute inset-x-0 top-full z-20 mt-1 overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+                  {clientesEncontrados.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setCliente(c); setBusquedaCliente('') }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-2"
+                    >
+                      <span>{c.nombre}</span>
+                      {c.telefono && <span className="text-xs text-text-dim">{c.telefono}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button" onClick={() => setMostrarSelector(true)}
+              className="self-start text-xs text-accent hover:underline"
+            >
+              ¿No te acordás cómo lo agendaste? Ver la lista completa
+            </button>
           </div>
         )}
       </div>
@@ -233,6 +254,16 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         </div>
       )}
 
+      {esEfectivo && vuelto !== null && vuelto > 0 && (
+        <Select
+          id="vuelto-cuenta" label="¿En qué medio das el vuelto?" value={vueltoCuentaPagoId}
+          onChange={(e) => setVueltoCuentaPagoId(e.target.value)}
+        >
+          <option value="">Efectivo (mismo medio que cobró)</option>
+          {cuentas?.filter((c) => c.tipo !== 'efectivo').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </Select>
+      )}
+
       {esCuentaCorriente && disponibleCredito !== null && (
         <p className={`flex items-center gap-1.5 text-xs ${total > disponibleCredito ? 'text-danger' : 'text-text-dim'}`}>
           <Wallet size={13} /> Disponible en su cuenta: <span className="font-medium">{formatMoney(disponibleCredito)}</span>
@@ -283,6 +314,7 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
             cuentaPagoId: esCuentaCorriente || esMixto ? '' : cuentaPagoId,
             cuentaCorriente: esCuentaCorriente,
             descuento, recargoMonto, efectivoRecibido,
+            vueltoCuentaPagoId: esEfectivo ? vueltoCuentaPagoId : '',
             pagos: esMixto
               ? pagos.map((p) => ({ cuenta_pago: p.cuentaId || null, monto: p.monto }))
               : [],
@@ -293,6 +325,13 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
           {esMixto && !mixtoCuadra ? 'Falta cargar el cobro' : 'Cobrar'}
         </Button>
       </div>
+
+      {mostrarSelector && (
+        <ClienteSelectorModal
+          onSeleccionar={(c) => { setCliente(c); setBusquedaCliente(''); setMostrarSelector(false) }}
+          onClose={() => setMostrarSelector(false)}
+        />
+      )}
     </div>
   )
 }

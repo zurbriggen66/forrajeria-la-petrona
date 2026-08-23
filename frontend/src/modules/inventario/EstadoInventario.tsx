@@ -1,9 +1,13 @@
 import { useState } from 'react'
-import { AlertTriangle, Boxes, Loader2, Package, PackageX, Scale, Wallet } from 'lucide-react'
+import { AlertTriangle, Boxes, Loader2, Package, PackageX, Scale, Search, Wallet } from 'lucide-react'
+import { Input } from '../../components/ui/Input'
 import { KpiCard } from '../../components/ui/KpiCard'
+import { Paginacion } from '../../components/ui/Paginacion'
+import { Select } from '../../components/ui/Select'
 import { Table, type Column } from '../../components/ui/Table'
 import { formatMoney } from '../../lib/format'
-import { useProductos } from '../productos/api'
+import { useDebounce } from '../../lib/useDebounce'
+import { PRODUCTOS_POR_PAGINA, useCategorias, useProductos } from '../productos/api'
 import { formatCantidadStock } from '../productos/stock'
 import type { Producto } from '../productos/types'
 import { useInventarioResumen } from './api'
@@ -54,12 +58,28 @@ function BarraStock({ stock, minimo }: { stock: number; minimo: number }) {
 
 export function EstadoInventario() {
   const [filtro, setFiltro] = useState<Filtro>('todos')
+  const [search, setSearch] = useState('')
+  const [categoria, setCategoria] = useState('')
+  const [pagina, setPagina] = useState(1)
+
+  const searchDiferido = useDebounce(search)
   const { data: resumen, isLoading: loadingResumen } = useInventarioResumen()
-  const { data: productos, isLoading: loadingProductos } = useProductos(
-    filtro === 'todos'
-      ? { activo: true, ordering: 'nombre' }
-      : { activo: true, stock_status: filtro, ordering: 'stock' },
-  )
+  const { data: categorias } = useCategorias()
+  const { data: productos, isLoading: loadingProductos } = useProductos({
+    activo: true,
+    ordering: filtro === 'todos' ? 'nombre' : 'stock',
+    ...(filtro === 'todos' ? {} : { stock_status: filtro }),
+    search: searchDiferido || undefined,
+    categoria: categoria || undefined,
+    page: pagina,
+  })
+
+  /** Cualquier cambio de filtro vuelve a la página 1: la página en la que
+   * estabas puede no existir en el resultado filtrado. */
+  function filtrar(cambio: () => void) {
+    cambio()
+    setPagina(1)
+  }
 
   const columns: Column<Producto>[] = [
     {
@@ -129,7 +149,7 @@ export function EstadoInventario() {
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setFiltro(t.key)}
+            onClick={() => filtrar(() => setFiltro(t.key))}
             className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               filtro === t.key ? 'border-accent text-accent' : 'border-transparent text-text-dim hover:text-text'
             }`}
@@ -139,17 +159,42 @@ export function EstadoInventario() {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+          <Input
+            id="buscar-stock" placeholder="Buscar por nombre o código de barras…"
+            value={search} onChange={(e) => filtrar(() => setSearch(e.target.value))} className="pl-9"
+          />
+        </div>
+        <Select
+          id="filtro-categoria-stock" value={categoria}
+          onChange={(e) => filtrar(() => setCategoria(e.target.value))} className="w-52"
+        >
+          <option value="">Todas las categorías</option>
+          {categorias?.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+        </Select>
+      </div>
+
       {loadingProductos ? (
         <div className="flex items-center justify-center gap-2 py-16 text-text-dim">
           <Loader2 size={16} className="animate-spin" /> Cargando inventario…
         </div>
       ) : (
-        <Table
-          columns={columns}
-          rows={productos?.results ?? []}
-          rowKey={(p) => p.id}
-          emptyMessage={filtro === 'todos' ? 'Todavía no cargaste productos.' : 'No hay productos en este filtro.'}
-        />
+        <>
+          <Table
+            columns={columns}
+            rows={productos?.results ?? []}
+            rowKey={(p) => p.id}
+            emptyMessage={search || categoria || filtro !== 'todos'
+              ? 'No hay productos que coincidan con el filtro.'
+              : 'Todavía no cargaste productos.'}
+          />
+          <Paginacion
+            pagina={pagina} porPagina={PRODUCTOS_POR_PAGINA}
+            total={productos?.count ?? 0} onCambiar={setPagina}
+          />
+        </>
       )}
     </div>
   )

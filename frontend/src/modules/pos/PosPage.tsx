@@ -93,6 +93,7 @@ export function PosPage() {
         metodo_pago: datos.cuentaCorriente ? 'cuenta_corriente' : datos.cuentaPagoId ? '' : 'efectivo',
         monto_cuenta_corriente: datos.cuentaCorriente ? String(total) : undefined,
         efectivo_recibido: datos.cuentaCorriente ? null : datos.efectivoRecibido || null,
+        vuelto_cuenta_pago: datos.vueltoCuentaPagoId || null,
         descuento: datos.descuento,
         recargo_monto: datos.recargoMonto,
       })

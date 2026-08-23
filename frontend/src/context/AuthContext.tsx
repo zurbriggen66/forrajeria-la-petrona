@@ -15,6 +15,7 @@ interface Perfil {
   nombre_completo: string
   rol: string
   email: string
+  username: string
   comercios: Comercio[]
 }
 
@@ -26,6 +27,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<void>
   logout: () => void
   setComercioActivo: (id: string) => void
+  refrescarUsuario: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -84,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const comercio = comercios.find((c) => c.id === comercioActivoId) ?? comercios[0] ?? null
 
   return (
-    <AuthContext.Provider value={{ user, comercio, comercios, loading, login, logout, setComercioActivo }}>
+    <AuthContext.Provider value={{ user, comercio, comercios, loading, login, logout, setComercioActivo, refrescarUsuario: fetchMe }}>
       {children}
     </AuthContext.Provider>
   )

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -108,3 +110,83 @@ class RespaldoTests(MultiSucursalMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("attachment", response["Content-Disposition"])
         self.assertEqual(response.json()["comercio"], "Sucursal Centro")
+
+
+class MiCuentaTests(APITestCase):
+    """Config: "Mi cuenta" — el usuario ve y cambia su propio usuario/contraseña."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno", password="claveVieja123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        Perfil.objects.create(user=self.user, comercio=self.comercio, nombre_completo="Dueño", rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+    def test_me_incluye_el_username(self):
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "dueno")
+
+    def test_cambia_el_username(self):
+        response = self.client.patch("/api/auth/me/usuario/", {"username": "dueno_nuevo"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "dueno_nuevo")
+
+    def test_rechaza_username_ya_usado_por_otro(self):
+        User.objects.create_user(username="ocupado", password="x")
+        response = self.client.patch("/api/auth/me/usuario/", {"username": "ocupado"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cambia_la_password_con_la_actual_correcta(self):
+        response = self.client.post("/api/auth/me/password/", {
+            "password_actual": "claveVieja123", "password_nueva": "claveNueva456",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("claveNueva456"))
+
+    def test_rechaza_cambio_de_password_si_la_actual_esta_mal(self):
+        response = self.client.post("/api/auth/me/password/", {
+            "password_actual": "no_es_esta", "password_nueva": "claveNueva456",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("claveVieja123"))
+
+
+class WhatsAppEstadoTests(MultiSucursalMixin, APITestCase):
+    @patch("core.views.estado_whatsapp")
+    def test_devuelve_el_estado_del_bot(self, mock_estado):
+        mock_estado.return_value = {"estado": "esperando_qr", "qr": "data:image/png;base64,abc"}
+        response = self.client.get("/api/auth/whatsapp/estado/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["estado"], "esperando_qr")
+
+    def test_usuario_sin_rol_dueño_no_puede_ver_el_estado(self):
+        cajero = User.objects.create_user(username="cajero_wa@test.com", password="testpass123")
+        UsuarioComercio.objects.create(user=cajero, comercio=self.sucursal_1, rol="Cajero")
+        Perfil.objects.create(user=cajero, comercio=self.sucursal_1, nombre_completo="Cajero", rol="Cajero")
+        self.client.force_authenticate(user=cajero)
+
+        response = self.client.get("/api/auth/whatsapp/estado/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class WhatsAppDesconectarTests(MultiSucursalMixin, APITestCase):
+    @patch("core.views.desconectar_whatsapp")
+    def test_desconecta_el_bot(self, mock_desconectar):
+        mock_desconectar.return_value = {"estado": "conectando", "qr": None}
+        response = self.client.post("/api/auth/whatsapp/desconectar/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["estado"], "conectando")
+        mock_desconectar.assert_called_once()
+
+    def test_usuario_sin_rol_dueño_no_puede_desconectar(self):
+        cajero = User.objects.create_user(username="cajero_wa2@test.com", password="testpass123")
+        UsuarioComercio.objects.create(user=cajero, comercio=self.sucursal_1, rol="Cajero")
+        Perfil.objects.create(user=cajero, comercio=self.sucursal_1, nombre_completo="Cajero", rol="Cajero")
+        self.client.force_authenticate(user=cajero)
+
+        response = self.client.post("/api/auth/whatsapp/desconectar/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

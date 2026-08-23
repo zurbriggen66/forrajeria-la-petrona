@@ -11,6 +11,15 @@ export const CONDICIONES_IVA = [
   { value: 'exento', label: 'Exento' },
 ] as const
 
+/** Medios de pago que pueden disparar la facturación automática. Son los
+ * `tipo` de CuentaPago, más el fiado, que no pasa por ninguna cuenta. */
+export const MEDIOS_FACTURABLES = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'tarjeta', label: 'Tarjeta' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'cuenta_corriente', label: 'Cuenta corriente (fiado)' },
+] as const
+
 export interface FiscalConfig {
   id: string
   cuit: string
@@ -21,6 +30,9 @@ export interface FiscalConfig {
   cert_ref: string
   homologacion: boolean
   activo: boolean
+  facturar_automatico: boolean
+  facturar_medios: string[]
+  facturar_monto_minimo: string
 }
 
 export type FiscalConfigInput = Omit<FiscalConfig, 'id'>

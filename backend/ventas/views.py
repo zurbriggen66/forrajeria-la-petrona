@@ -14,8 +14,8 @@ from clientes.models import Cliente, ClienteMovimiento
 from clientes.views import aplicar_movimiento_cliente
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
-from fiscal.afip import ErrorFiscal, solicitar_cae
-from fiscal.models import ComercioFiscalConfig, FiscalQueue
+from fiscal.afip import ErrorFiscal
+from fiscal.services import config_vigente, emitir_factura, facturar_si_corresponde
 from kubobots.models import KubobotsCliente
 from productos.models import Producto
 from productos.precios import resolver_precio_item
@@ -32,7 +32,7 @@ class VentaViewSet(TenantViewSet):
     # traer el nombre del producto — 60 ventas salían ~450 consultas.
     queryset = (
         Venta.objects.all()
-        .select_related("cliente", "vendedor", "cuenta_pago")
+        .select_related("cliente", "vendedor", "cuenta_pago", "vuelto_cuenta_pago")
         .prefetch_related("items__producto", "pagos__cuenta_pago")
         .order_by("-created_at")
     )
@@ -80,12 +80,22 @@ class VentaViewSet(TenantViewSet):
             if existente:
                 return Response(VentaSerializer(existente).data, status=status.HTTP_200_OK)
             raise
+
+        # Facturación automática: fuera de la transacción de la venta a
+        # propósito. La venta ya está cobrada y guardada; pedirle el CAE a ARCA
+        # es una llamada de red que no puede hacerla fallar hacia atrás. Si no
+        # sale, queda en la cola para reintentar (ver facturar_si_corresponde).
+        if facturar_si_corresponde(venta):
+            venta.refresh_from_db()
+
         return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def anular(self, request, pk=None):
         comercio = resolver_comercio_activo(request)
-        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related("caja_sesion", "cliente").first()
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related(
+            "caja_sesion", "cliente", "cuenta_pago", "vuelto_cuenta_pago"
+        ).first()
         if venta is None:
             raise ValidationError("La venta no existe.")
         if venta.anulada:
@@ -135,6 +145,19 @@ class VentaViewSet(TenantViewSet):
                     for cuenta, monto in pagos
                 ])
 
+                if venta.vuelto_cuenta_pago_id and venta.vuelto and venta.vuelto > 0:
+                    cuenta_cobro = venta.cuenta_pago or resolver_cuenta_efectivo(comercio)
+                    CajaMovimiento.objects.bulk_create([
+                        CajaMovimiento(
+                            comercio=comercio, sesion=venta.caja_sesion, cuenta=cuenta_cobro, tipo="egreso",
+                            concepto=f"Anulación venta #{venta.numero_ticket} (vuelto)", monto=venta.vuelto,
+                        ),
+                        CajaMovimiento(
+                            comercio=comercio, sesion=venta.caja_sesion, cuenta=venta.vuelto_cuenta_pago, tipo="ingreso",
+                            concepto=f"Anulación venta #{venta.numero_ticket} (vuelto)", monto=venta.vuelto,
+                        ),
+                    ])
+
             # Ídem para lo que se había cargado a la cuenta corriente del
             # cliente: se revierte siempre, sin importar el estado de la caja.
             if venta.monto_cuenta_corriente > 0 and venta.cliente_id:
@@ -154,10 +177,12 @@ class VentaViewSet(TenantViewSet):
         """Pide el CAE a ARCA para esta venta (Fase 7). Deliberadamente separado
         de la creación de la venta: es una llamada de red a un tercero, no puede
         bloquear el cobro ni los locks de stock de _crear_venta. Se puede
-        reintentar — FiscalQueue.status queda en "error" con el motivo si ARCA
-        rechaza el comprobante o no se pudo conectar."""
+        reintentar — el ítem de FiscalQueue queda en "pendiente" con el motivo
+        si ARCA rechaza el comprobante o no se pudo conectar."""
         comercio = resolver_comercio_activo(request)
-        venta = Venta.objects.filter(comercio=comercio, pk=pk).first()
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).prefetch_related(
+            "pagos__cuenta_pago"
+        ).first()
         if venta is None:
             raise ValidationError("La venta no existe.")
         if venta.anulada:
@@ -165,48 +190,14 @@ class VentaViewSet(TenantViewSet):
         if venta.facturado:
             raise ValidationError("Esta venta ya tiene CAE.")
 
-        config = ComercioFiscalConfig.objects.filter(comercio=comercio, activo=True).order_by(
-            "-es_principal"
-        ).first()
+        config = config_vigente(comercio)
         if config is None:
             raise ValidationError("Este comercio no tiene configuración fiscal cargada (CUIT/punto de venta).")
 
-        cola, _ = FiscalQueue.objects.update_or_create(
-            comercio=comercio, venta=venta,
-            defaults={"status": "procesando", "error_msg": ""},
-        )
-
         try:
-            resultado = solicitar_cae(venta, config)
+            emitir_factura(venta, config)
         except ErrorFiscal as exc:
-            cola.status = "error"
-            cola.error_msg = str(exc)
-            cola.save(update_fields=["status", "error_msg", "updated_at"])
             raise ValidationError({"fiscal": str(exc)})
-
-        with transaction.atomic():
-            venta.facturado = True
-            venta.cae = resultado["cae"]
-            venta.cae_vencimiento = resultado["cae_vencimiento"]
-            venta.numero_factura = str(resultado["numero"])
-            venta.punto_venta_factura = str(resultado["punto_vta"])
-            venta.tipo_factura = str(resultado["tipo_cbte"])
-            venta.fecha_facturacion = timezone.now()
-            venta.save(update_fields=[
-                "facturado", "cae", "cae_vencimiento", "numero_factura",
-                "punto_venta_factura", "tipo_factura", "fecha_facturacion", "updated_at",
-            ])
-
-            cola.status = "ok"
-            cola.cae = resultado["cae"]
-            cola.cae_vencimiento = resultado["cae_vencimiento"]
-            cola.punto_venta = str(resultado["punto_vta"])
-            cola.numero_factura = str(resultado["numero"])
-            cola.tipo_comprobante = str(resultado["tipo_cbte"])
-            cola.save(update_fields=[
-                "status", "cae", "cae_vencimiento", "punto_venta",
-                "numero_factura", "tipo_comprobante", "updated_at",
-            ])
 
         return Response(VentaSerializer(venta).data)
 
@@ -297,6 +288,12 @@ class VentaViewSet(TenantViewSet):
                 if cuenta_pago_obj is None:
                     raise ValidationError({"cuenta_pago": "No pertenece a este comercio."})
 
+            vuelto_cuenta_obj = None
+            if data["vuelto_cuenta_pago"]:
+                vuelto_cuenta_obj = CuentaPago.objects.filter(comercio=comercio, id=data["vuelto_cuenta_pago"]).first()
+                if vuelto_cuenta_obj is None:
+                    raise ValidationError({"vuelto_cuenta_pago": "No pertenece a este comercio."})
+
             items_a_crear = []
             productos_a_actualizar = []
             total = Decimal("0")
@@ -311,7 +308,12 @@ class VentaViewSet(TenantViewSet):
                     producto, cantidad, item.get("es_bolsa")
                 )
 
-                if producto.stock < kg_reales:
+                # Comercio.permitir_venta_sin_stock (default True): stock en 0 o
+                # insuficiente suele ser un dato mal cargado, no falta real de
+                # mercadería — bloquear la venta ahí frena el mostrador por un
+                # problema de carga, no de stock. Apagado, se vuelve a la
+                # validación estricta de siempre.
+                if not comercio.permitir_venta_sin_stock and producto.stock < kg_reales:
                     raise ValidationError({
                         "items": f'No hay stock suficiente de "{producto.nombre}" (disponible: {producto.stock}).'
                     })
@@ -357,6 +359,15 @@ class VentaViewSet(TenantViewSet):
             if data["efectivo_recibido"] is not None:
                 vuelto = max(data["efectivo_recibido"] - total, Decimal("0"))
 
+            # Si el vuelto se da desde una cuenta distinta de la que cobró (ej:
+            # cobra en efectivo pero no hay billetes chicos y da el vuelto por
+            # transferencia), sólo aplica al cobro simple — el mixto ya reparte
+            # explícitamente entre cuentas y no tiene noción de "vuelto".
+            vuelto_desde_otra_cuenta = (
+                vuelto and vuelto > 0 and vuelto_cuenta_obj and pagos and not data["pagos"]
+                and vuelto_cuenta_obj.id != pagos[0][0].id
+            )
+
             numero_ticket = (
                 Venta.objects.filter(comercio=comercio).aggregate(m=Max("numero_ticket"))["m"] or 0
             ) + 1
@@ -381,6 +392,7 @@ class VentaViewSet(TenantViewSet):
                 monto_cuenta_corriente=monto_cuenta_corriente,
                 efectivo_recibido=data["efectivo_recibido"],
                 vuelto=vuelto,
+                vuelto_cuenta_pago=vuelto_cuenta_obj if vuelto_desde_otra_cuenta else None,
                 origen=data["origen"] or "pos",
             )
             for item in items_a_crear:
@@ -394,7 +406,7 @@ class VentaViewSet(TenantViewSet):
             VentaPago.objects.bulk_create([
                 VentaPago(venta=venta, cuenta_pago=cuenta, monto=monto) for cuenta, monto in pagos
             ])
-            CajaMovimiento.objects.bulk_create([
+            movimientos = [
                 CajaMovimiento(
                     comercio=comercio,
                     sesion=caja_sesion,
@@ -404,7 +416,23 @@ class VentaViewSet(TenantViewSet):
                     monto=monto,
                 )
                 for cuenta, monto in pagos
-            ])
+            ]
+            if vuelto_desde_otra_cuenta:
+                # La cuenta de cobro recibió el bruto (incluye lo que después
+                # se entregó de vuelto); la cuenta del vuelto lo entregó. Sin
+                # estos dos movimientos, la de cobro queda de menos y la del
+                # vuelto no refleja la salida real de esa plata.
+                cuenta_cobro = pagos[0][0]
+                movimientos.append(CajaMovimiento(
+                    comercio=comercio, sesion=caja_sesion, cuenta=cuenta_cobro, tipo="ingreso",
+                    concepto=f"Venta #{numero_ticket} (efectivo recibido de más, vuelto por otro medio)",
+                    monto=vuelto,
+                ))
+                movimientos.append(CajaMovimiento(
+                    comercio=comercio, sesion=caja_sesion, cuenta=vuelto_cuenta_obj, tipo="egreso",
+                    concepto=f"Vuelto venta #{numero_ticket}", monto=vuelto,
+                ))
+            CajaMovimiento.objects.bulk_create(movimientos)
 
             if monto_cuenta_corriente > 0:
                 ClienteMovimiento.objects.create(

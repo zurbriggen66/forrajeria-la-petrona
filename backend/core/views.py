@@ -20,6 +20,8 @@ from .mixins import TenantViewSet, resolver_comercio_activo
 from .models import EmpleadoTurno, Perfil, UsuarioComercio
 from .permissions import IsDueño
 from .serializers import (
+    CambiarPasswordSerializer,
+    CambiarUsuarioSerializer,
     ComercioUpdateSerializer,
     EmpleadoTurnoSerializer,
     PerfilMeSerializer,
@@ -27,6 +29,7 @@ from .serializers import (
     UsuarioComercioInviteSerializer,
     UsuarioComercioSerializer,
 )
+from .whatsapp import desconectar_whatsapp, estado_whatsapp
 
 User = get_user_model()
 
@@ -39,6 +42,54 @@ class MeView(RetrieveAPIView):
 
     def get_object(self):
         return Perfil.objects.select_related("user").get(user=self.request.user)
+
+
+class MiUsuarioView(APIView):
+    """Cambiar el propio nombre de usuario (login) — Config: "Mi cuenta"."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        serializer = CambiarUsuarioSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        request.user.username = serializer.validated_data["username"]
+        request.user.save(update_fields=["username"])
+        return Response({"username": request.user.username})
+
+
+class CambiarPasswordView(APIView):
+    """Cambiar la propia contraseña — pide la actual para confirmar identidad,
+    ídem cualquier otro sistema (esto no pasa por el flujo de invitación de
+    UsuarioComercioViewSet, que es sólo para que el Dueño dé de alta a otros)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CambiarPasswordSerializer(data=request.data, context={"user": request.user})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["password_nueva"])
+        request.user.save(update_fields=["password"])
+        return Response({"ok": True})
+
+
+class WhatsAppEstadoView(APIView):
+    """Estado del bot de WhatsApp (QR) — Config: "WhatsApp". Sólo Dueño: es
+    infraestructura del comercio, no algo que un cajero necesite tocar."""
+
+    permission_classes = [IsAuthenticated, IsDueño]
+
+    def get(self, request):
+        return Response(estado_whatsapp())
+
+
+class WhatsAppDesconectarView(APIView):
+    """Cierra la sesión vinculada del bot — Config: "WhatsApp", para cuando
+    el comercio cambia de celular y necesita volver a escanear el QR."""
+
+    permission_classes = [IsAuthenticated, IsDueño]
+
+    def post(self, request):
+        return Response(desconectar_whatsapp())
 
 
 class PerfilViewSet(TenantViewSet):

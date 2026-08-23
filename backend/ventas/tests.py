@@ -95,7 +95,22 @@ class VentaCompletaTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Decimal(response.data["total"]), Decimal("300.00"))
 
-    def test_rechaza_venta_sin_stock_suficiente(self):
+    def test_permite_vender_con_stock_insuficiente_por_defecto(self):
+        """Comercio.permitir_venta_sin_stock nace en True: un stock mal
+        cargado (todo en 0 tras una importación, por ejemplo) no puede frenar
+        el mostrador. La venta entra y el stock queda en negativo, marcando
+        que ese producto necesita un recuento."""
+        response = self.client.post("/api/ventas/", self._payload(items=[
+            {"producto": str(self.gaseosa.id), "cantidad": "999"},
+        ]), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("50.000") - Decimal("999"))
+
+    def test_rechaza_venta_sin_stock_suficiente_si_esta_desactivado(self):
+        self.comercio.permitir_venta_sin_stock = False
+        self.comercio.save(update_fields=["permitir_venta_sin_stock"])
+
         response = self.client.post("/api/ventas/", self._payload(items=[
             {"producto": str(self.gaseosa.id), "cantidad": "999"},
         ]), format="json")
@@ -406,6 +421,9 @@ class VentaPorBolsaTests(APITestCase):
         self.assertEqual(item_bolsa.costo_unitario, Decimal("2000.00"), "costo por kg (100) * kg por bolsa (20)")
 
     def test_rechaza_bolsa_sin_stock_suficiente_en_kg(self):
+        self.comercio.permitir_venta_sin_stock = False
+        self.comercio.save(update_fields=["permitir_venta_sin_stock"])
+
         response = self.client.post("/api/ventas/", {
             "sync_uuid": str(uuid.uuid4()),
             "items": [{"producto": str(self.alimento.id), "cantidad": "6", "es_bolsa": True}],  # 6*20=120kg > 100kg
@@ -470,7 +488,7 @@ class VentaFacturarTests(APITestCase):
         response = self._facturar()
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("ventas.views.solicitar_cae")
+    @patch("fiscal.services.solicitar_cae")
     def test_facturar_exitoso_guarda_cae_en_la_venta_y_en_la_cola(self, mock_solicitar_cae):
         ComercioFiscalConfig.objects.create(
             comercio=self.comercio, cuit="20111111112", punto_venta="1",
@@ -491,7 +509,7 @@ class VentaFacturarTests(APITestCase):
         self.assertEqual(cola.status, "ok")
         self.assertEqual(cola.cae, "75319871239871")
 
-    @patch("ventas.views.solicitar_cae")
+    @patch("fiscal.services.solicitar_cae")
     def test_rechazo_de_arca_deja_la_cola_en_error_y_la_venta_sin_facturar(self, mock_solicitar_cae):
         ComercioFiscalConfig.objects.create(
             comercio=self.comercio, cuit="20111111112", punto_venta="1",
@@ -509,7 +527,7 @@ class VentaFacturarTests(APITestCase):
         self.assertEqual(cola.status, "error")
         self.assertIn("CUIT del comprador inválido", cola.error_msg)
 
-    @patch("ventas.views.solicitar_cae")
+    @patch("fiscal.services.solicitar_cae")
     def test_se_puede_reintentar_despues_de_un_error(self, mock_solicitar_cae):
         ComercioFiscalConfig.objects.create(
             comercio=self.comercio, cuit="20111111112", punto_venta="1",
@@ -745,3 +763,96 @@ class VentaPagoMixtoTests(APITestCase):
         movimiento = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="ingreso")
         self.assertEqual(movimiento.cuenta_id, self.debito.id)
         self.assertEqual(movimiento.monto, Decimal("48000.00"))
+
+
+class VueltoPorOtraCuentaTests(APITestCase):
+    """Vuelto dado por un medio distinto al que cobró (ej: cobra en efectivo,
+    no hay billetes chicos y da el vuelto por transferencia). Sin esto, el
+    cajón de efectivo queda de menos y la transferencia no refleja la salida
+    real de esa plata — las estadísticas por medio de pago salen mal."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero_vuelto", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.efectivo = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        self.transferencia = CuentaPago.objects.create(comercio=self.comercio, nombre="Transferencia", tipo="transferencia")
+
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado", precio_costo=Decimal("20000"),
+            precio_venta=Decimal("48000"), stock=Decimal("100"),
+        )
+
+    def _vender(self, **extra):
+        payload = {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.producto.id), "cantidad": "1"}],
+            "efectivo_recibido": "50000",
+        }
+        payload.update(extra)
+        return self.client.post("/api/ventas/", payload, format="json")
+
+    def test_vuelto_por_otra_cuenta_ajusta_los_dos_contenedores(self):
+        response = self._vender(vuelto_cuenta_pago=str(self.transferencia.id))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["vuelto"]), Decimal("2000.00"))
+        self.assertEqual(response.data["vuelto_cuenta_pago_nombre"], "Transferencia")
+
+        # Efectivo recibió el bruto: $48.000 de la venta + $2.000 que después
+        # salieron de vuelto por otro medio = $50.000.
+        ingreso_efectivo = CajaMovimiento.objects.filter(
+            sesion=self.caja_sesion, cuenta=self.efectivo, tipo="ingreso"
+        ).aggregate(t=models.Sum("monto"))["t"]
+        self.assertEqual(ingreso_efectivo, Decimal("50000.00"))
+
+        egreso_transferencia = CajaMovimiento.objects.get(
+            sesion=self.caja_sesion, cuenta=self.transferencia, tipo="egreso"
+        )
+        self.assertEqual(egreso_transferencia.monto, Decimal("2000.00"))
+
+    def test_sin_elegir_cuenta_de_vuelto_no_cambia_nada(self):
+        """Default: se asume que el vuelto sale de la misma cuenta que cobró
+        (efectivo) — comportamiento de siempre, sin movimientos extra."""
+        response = self._vender()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(response.data["vuelto_cuenta_pago"])
+
+        movimientos = CajaMovimiento.objects.filter(sesion=self.caja_sesion)
+        self.assertEqual(movimientos.count(), 1)
+        self.assertEqual(movimientos.first().monto, Decimal("48000.00"))
+
+    def test_elegir_la_misma_cuenta_que_cobro_no_genera_movimientos_extra(self):
+        response = self._vender(cuenta_pago=str(self.efectivo.id), vuelto_cuenta_pago=str(self.efectivo.id))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(response.data["vuelto_cuenta_pago"])
+        self.assertEqual(CajaMovimiento.objects.filter(sesion=self.caja_sesion).count(), 1)
+
+    def test_anular_revierte_los_dos_contenedores(self):
+        creada = self._vender(vuelto_cuenta_pago=str(self.transferencia.id))
+        venta_id = creada.data["id"]
+
+        response = self.client.post(f"/api/ventas/{venta_id}/anular/", {"motivo": "Error de carga"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+        ingresos_efectivo = CajaMovimiento.objects.filter(
+            sesion=self.caja_sesion, cuenta=self.efectivo, tipo="ingreso"
+        ).aggregate(t=models.Sum("monto"))["t"]
+        egresos_efectivo = CajaMovimiento.objects.filter(
+            sesion=self.caja_sesion, cuenta=self.efectivo, tipo="egreso"
+        ).aggregate(t=models.Sum("monto"))["t"]
+        self.assertEqual(ingresos_efectivo, Decimal("50000.00"))
+        # $48.000 de reversión de la venta + $2.000 de reversión del ajuste
+        # bruto del vuelto = $50.000: el contenedor vuelve a cero.
+        self.assertEqual(egresos_efectivo, Decimal("50000.00"))
+
+        ingresos_transferencia = CajaMovimiento.objects.filter(
+            sesion=self.caja_sesion, cuenta=self.transferencia, tipo="ingreso"
+        ).aggregate(t=models.Sum("monto"))["t"]
+        egresos_transferencia = CajaMovimiento.objects.filter(
+            sesion=self.caja_sesion, cuenta=self.transferencia, tipo="egreso"
+        ).aggregate(t=models.Sum("monto"))["t"]
+        self.assertEqual(ingresos_transferencia, Decimal("2000.00"))
+        self.assertEqual(egresos_transferencia, Decimal("2000.00"))

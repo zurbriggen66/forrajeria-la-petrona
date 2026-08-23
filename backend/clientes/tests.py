@@ -151,6 +151,34 @@ class ClienteCuentaCorrienteTests(APITestCase):
         nombres = [c["nombre"] for c in response.data["results"]]
         self.assertEqual(nombres, ["Juan Pérez"])
 
+    def test_se_puede_ordenar_alfabeticamente(self):
+        Cliente.objects.create(comercio=self.comercio, nombre="Ana Gómez")
+        Cliente.objects.create(comercio=self.comercio, nombre="Zoe Ruiz")
+
+        response = self.client.get("/api/clientes/", {"ordering": "nombre"})
+        self.assertEqual([c["nombre"] for c in response.data["results"]], ["Ana Gómez", "Juan Pérez", "Zoe Ruiz"])
+
+        response = self.client.get("/api/clientes/", {"ordering": "-nombre"})
+        self.assertEqual([c["nombre"] for c in response.data["results"]], ["Zoe Ruiz", "Juan Pérez", "Ana Gómez"])
+
+    def test_eliminar_cliente(self):
+        response = self.client.delete(f"/api/clientes/{self.cliente.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Cliente.objects.filter(pk=self.cliente.id).exists())
+
+    def test_eliminar_cliente_no_borra_sus_ventas(self):
+        # La venta queda en el historial con cliente=None (SET_NULL en
+        # ventas/models.py), no desaparece junto con el cliente.
+        from ventas.models import Venta
+
+        venta = Venta.objects.create(comercio=self.comercio, cliente=self.cliente, total=Decimal("100"))
+
+        response = self.client.delete(f"/api/clientes/{self.cliente.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        venta.refresh_from_db()
+        self.assertIsNone(venta.cliente)
+
 
 class ClienteAsignacionTests(APITestCase):
     def setUp(self):

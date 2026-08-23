@@ -7,3 +7,4 @@ media/
 fiscal_certs/*.crt
 fiscal_certs/*.key
 fiscal_certs/*.csr
+backups/

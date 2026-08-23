@@ -44,6 +44,8 @@ export interface Venta {
   monto_cuenta_corriente: string
   efectivo_recibido: string | null
   vuelto: string | null
+  vuelto_cuenta_pago: string | null
+  vuelto_cuenta_pago_nombre: string | null
   origen: string
   anulada: boolean
   motivo_anulacion: string
@@ -63,6 +65,7 @@ export interface VentasFiltros {
   cliente?: string
   anulada?: boolean
   numero_ticket?: string
+  page?: number
 }
 
 export interface Vendedor {

@@ -5,8 +5,13 @@ from caja.models import CajaSesion, CuentaPago
 
 
 class Gasto(TenantModel):
+    TIPOS = [("fijo", "Fijo"), ("variable", "Variable")]
+
     caja_sesion = models.ForeignKey(CajaSesion, on_delete=models.SET_NULL, null=True, blank=True)
     cuenta = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
+    # Fijo: se repite mes a mes con monto similar (alquiler, sueldos). Variable:
+    # el resto. Es lo que separa las dos secciones dentro de Compras.
+    tipo = models.CharField(max_length=20, choices=TIPOS, default="variable")
     categoria = models.CharField(max_length=120, blank=True)
     descripcion = models.CharField(max_length=300, blank=True)
     monto = models.DecimalField(max_digits=14, decimal_places=2, default=0)

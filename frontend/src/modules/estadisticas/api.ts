@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import type { VentasFiltros } from '../ventas/types'
-import type { Rankings, RentabilidadProducto, Resumen, VerdadDelNegocio } from './types'
+import type { Panel, Rankings, RentabilidadProducto, Resumen, VerdadDelNegocio } from './types'
 
 export function useResumen(filtros: VentasFiltros) {
   return useQuery({
@@ -38,6 +38,16 @@ export function useVerdadDelNegocio(filtros: VentasFiltros) {
     queryKey: ['estadisticas', 'verdad-del-negocio', filtros],
     queryFn: async () => {
       const { data } = await api.get<VerdadDelNegocio>('/estadisticas/verdad-del-negocio/', { params: filtros })
+      return data
+    },
+  })
+}
+
+export function usePanel(filtros: VentasFiltros) {
+  return useQuery({
+    queryKey: ['estadisticas', 'panel', filtros],
+    queryFn: async () => {
+      const { data } = await api.get<Panel>('/estadisticas/panel/', { params: filtros })
       return data
     },
   })

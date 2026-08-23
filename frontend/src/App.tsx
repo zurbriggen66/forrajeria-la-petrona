@@ -1,4 +1,3 @@
-import type { ComponentType } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
@@ -6,72 +5,19 @@ import { RequireAuth } from './router/RequireAuth'
 import { ShellLayout } from './shell/ShellLayout'
 import { LoginPage } from './pages/LoginPage'
 import { ModulePlaceholder } from './modules/ModulePlaceholder'
-import { FLAT_ROUTES } from './router/navigation'
-import { ProductosListado } from './modules/productos/ProductosListado'
-import { Combos } from './modules/productos/Combos'
-import { Aumentos } from './modules/productos/Aumentos'
-import { Historial } from './modules/productos/Historial'
-import { Stock } from './modules/inventario/Stock'
-import { RankingRentabilidad } from './modules/inventario/RankingRentabilidad'
-import { PosPage } from './modules/pos/PosPage'
-import { ControlCaja } from './modules/caja/ControlCaja'
-import { Movimientos } from './modules/caja/Movimientos'
-import { CuentasYCajas } from './modules/caja/CuentasYCajas'
-import { HistorialSesiones } from './modules/caja/HistorialSesiones'
-import { Gastos } from './modules/finanzas/Gastos'
-import { HistorialVentas } from './modules/ventas/HistorialVentas'
-import { Tickets } from './modules/ventas/Tickets'
-import { Panel } from './modules/estadisticas/Panel'
-import { Rankings } from './modules/estadisticas/Rankings'
-import { Rentabilidad } from './modules/estadisticas/Rentabilidad'
-import { VerdadDelNegocio } from './modules/estadisticas/VerdadDelNegocio'
-import { Proveedores } from './modules/proveedores/Proveedores'
-import { PedidosSugeridos } from './modules/proveedores/PedidosSugeridos'
-import { PedidosManuales } from './modules/proveedores/PedidosManuales'
-import { Compras } from './modules/compras/Compras'
-import { Repartos } from './modules/repartos/Repartos'
-import { Presupuestos } from './modules/presupuestos/Presupuestos'
-import { Asistente } from './modules/asistente/Asistente'
-import { Clientes } from './modules/clientes/Clientes'
-import { Sucursales } from './modules/admin/Sucursales'
-import { Turnos } from './modules/empleados/Turnos'
-import { Etiquetas } from './modules/etiquetas/Etiquetas'
-import { Config } from './modules/config/Config'
+import { FLAT_ROUTES, NAV_ITEMS } from './router/navigation'
+import { MODULOS_IMPLEMENTADOS } from './router/modulos'
+import { SeccionPage } from './router/SeccionPage'
 
-// Módulos ya implementados (ROADMAP Fases 1 a 8, sin Kubobots, sin Fiscal y
-// sin Mapa Neural). El resto sigue como placeholder hasta que le toque su fase.
-const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
-  '/pos': PosPage,
-  '/asistente': Asistente,
-  '/productos/listado': ProductosListado,
-  '/productos/combos': Combos,
-  '/productos/aumentos': Aumentos,
-  '/productos/historial': Historial,
-  '/stock': Stock,
-  '/inventario/ranking': RankingRentabilidad,
-  '/caja/contenedores': ControlCaja,
-  '/caja/movimientos': Movimientos,
-  '/caja/cuentas-cajas': CuentasYCajas,
-  '/caja/historial': HistorialSesiones,
-  '/finanzas/gastos': Gastos,
-  '/ventas/historial': HistorialVentas,
-  '/ventas/tickets': Tickets,
-  '/estadisticas/panel': Panel,
-  '/estadisticas/rankings': Rankings,
-  '/estadisticas/rentabilidad': Rentabilidad,
-  '/verdad-del-negocio': VerdadDelNegocio,
-  '/proveedores': Proveedores,
-  '/pedidos/sugeridos': PedidosSugeridos,
-  '/pedidos/manuales': PedidosManuales,
-  '/compras': Compras,
-  '/repartos': Repartos,
-  '/presupuestos': Presupuestos,
-  '/clientes': Clientes,
-  '/sucursales': Sucursales,
-  '/empleados': Turnos,
-  '/etiquetas': Etiquetas,
-  '/config': Config,
-}
+/** Paths que pertenecen a una sección con pestañas (el padre y cada hija).
+ * Todos rinden SeccionPage: así la pestaña activa sale de la URL y la barra
+ * de pestañas no desaparece al navegar entre ellas. */
+const RUTAS_DE_SECCION = new Set(
+  NAV_ITEMS.filter((i) => i.children?.length).flatMap((i) => [
+    i.path,
+    ...i.children!.map((c) => c.path),
+  ]),
+)
 
 function App() {
   return (
@@ -90,13 +36,12 @@ function App() {
             <Route path="/" element={<Navigate to="/home" replace />} />
             {FLAT_ROUTES.map((route) => {
               const Modulo = MODULOS_IMPLEMENTADOS[route.path]
-              return (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={Modulo ? <Modulo /> : <ModulePlaceholder nombre={route.label} />}
-                />
-              )
+              const elemento = RUTAS_DE_SECCION.has(route.path)
+                ? <SeccionPage />
+                : Modulo
+                  ? <Modulo />
+                  : <ModulePlaceholder nombre={route.label} />
+              return <Route key={route.path} path={route.path} element={elemento} />
             })}
           </Route>
 

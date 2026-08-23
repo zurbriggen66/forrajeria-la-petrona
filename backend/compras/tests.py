@@ -2,14 +2,16 @@
 Registrar una compra tiene que sumar stock y actualizar el saldo del
 proveedor (criterio de aceptación de la Fase 5).
 """
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from caja.models import CajaMovimiento, CajaSesion
-from core.models import Comercio, UsuarioComercio
+from core.models import Comercio, Perfil, UsuarioComercio
 from productos.models import Producto
 from proveedores.models import Proveedor, ProveedorMovimiento
 
@@ -112,3 +114,116 @@ class CompraTests(APITestCase):
         fuera = self.client.get("/api/compras/?fecha_desde=2026-01-01&fecha_hasta=2026-01-31")
         self.assertEqual(dentro.data["count"], 1)
         self.assertEqual(fuera.data["count"], 0)
+
+
+class CompraFiadaTests(APITestCase):
+    """Compra a proveedor "fiada": la mercadería llega el 23/08 pero se paga el
+    15/09. Lo que importa es que el egreso cuente el día del pago, no el de la
+    entrega, y que se pueda pagar en varias veces."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        Perfil.objects.create(
+            user=self.user, comercio=self.comercio, nombre_completo="Dueño", rol="Dueño",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        self.proveedor = Proveedor.objects.create(comercio=self.comercio, nombre="Distribuidora Sur")
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Alimento", stock=Decimal("10"),
+            precio_costo=Decimal("100"), precio_venta=Decimal("200"),
+        )
+
+    def _comprar_fiado(self):
+        """Compra de $600 entregada el 23/08, a pagar el 15/09."""
+        response = self.client.post("/api/compras/", {
+            "proveedor": str(self.proveedor.id),
+            "numero_factura": "A-0001",
+            "fecha": "2026-08-23",
+            "fecha_vencimiento": "2026-09-15",
+            "pagado": False,
+            "items": [{"producto": str(self.producto.id), "cantidad": "5", "costo_unitario": "120"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return response.data
+
+    def test_compra_fiada_entra_stock_y_deuda_pero_no_toca_la_caja(self):
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+        compra = self._comprar_fiado()
+
+        self.assertEqual(compra["estado"], "pendiente")
+        self.assertEqual(Decimal(compra["saldo_pendiente"]), Decimal("600.00"))
+        self.assertEqual(compra["fecha_vencimiento"], "2026-09-15")
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, Decimal("15.000"), "la mercadería sí entró")
+        self.proveedor.refresh_from_db()
+        self.assertEqual(self.proveedor.saldo_actual, Decimal("600.00"))
+        # Todavía no salió un peso.
+        self.assertFalse(CajaMovimiento.objects.exists())
+
+    def test_el_egreso_cuenta_el_dia_del_pago_no_el_de_la_entrega(self):
+        compra = self._comprar_fiado()
+        response = self.client.post(f"/api/compras/{compra['id']}/pagar/", {
+            "fecha": "2026-09-15", "monto": "600",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        # El día que llegó la mercadería no hay egreso…
+        entrega = self.client.get("/api/estadisticas/resumen/?fecha_desde=2026-08-23&fecha_hasta=2026-08-23")
+        self.assertEqual(Decimal(entrega.data["egresos"]), Decimal("0.00"))
+        # …y el día que pagó, sí.
+        pago = self.client.get("/api/estadisticas/resumen/?fecha_desde=2026-09-15&fecha_hasta=2026-09-15")
+        self.assertEqual(Decimal(pago.data["egresos"]), Decimal("600.00"))
+
+    def test_pagos_parciales_van_saldando_la_compra(self):
+        compra = self._comprar_fiado()
+        url = f"/api/compras/{compra['id']}/pagar/"
+
+        primero = self.client.post(url, {"fecha": "2026-09-15", "monto": "200"}, format="json")
+        self.assertEqual(primero.status_code, status.HTTP_201_CREATED, primero.data)
+        self.assertEqual(primero.data["compra"]["estado"], "parcial")
+        self.assertEqual(Decimal(primero.data["compra"]["saldo_pendiente"]), Decimal("400.00"))
+        self.proveedor.refresh_from_db()
+        self.assertEqual(self.proveedor.saldo_actual, Decimal("400.00"))
+
+        segundo = self.client.post(url, {"fecha": "2026-09-30", "monto": "400"}, format="json")
+        self.assertEqual(segundo.status_code, status.HTTP_201_CREATED, segundo.data)
+        self.assertEqual(segundo.data["compra"]["estado"], "pagada")
+        self.assertEqual(Decimal(segundo.data["compra"]["saldo_pendiente"]), Decimal("0.00"))
+        self.proveedor.refresh_from_db()
+        self.assertEqual(self.proveedor.saldo_actual, Decimal("0.00"))
+
+        # Cada pago pesa en su propio mes.
+        septiembre = self.client.get("/api/estadisticas/resumen/?fecha_desde=2026-09-01&fecha_hasta=2026-09-20")
+        self.assertEqual(Decimal(septiembre.data["egresos"]), Decimal("200.00"))
+
+    def test_no_se_puede_pagar_de_mas_ni_pagar_dos_veces(self):
+        compra = self._comprar_fiado()
+        url = f"/api/compras/{compra['id']}/pagar/"
+
+        excedido = self.client.post(url, {"fecha": "2026-09-15", "monto": "700"}, format="json")
+        self.assertEqual(excedido.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.client.post(url, {"fecha": "2026-09-15", "monto": "600"}, format="json")
+        repetido = self.client.post(url, {"fecha": "2026-09-16", "monto": "1"}, format="json")
+        self.assertEqual(repetido.status_code, status.HTTP_400_BAD_REQUEST, "ya está saldada")
+
+    def test_el_pago_sale_de_la_caja_abierta(self):
+        sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+        compra = self._comprar_fiado()
+        self.client.post(f"/api/compras/{compra['id']}/pagar/", {
+            "fecha": "2026-09-15", "monto": "600",
+        }, format="json")
+
+        movimiento = CajaMovimiento.objects.get(sesion=sesion, tipo="egreso")
+        self.assertEqual(movimiento.monto, Decimal("600.00"))
+
+    def test_inicio_cuenta_las_facturas_por_pagar_y_las_vencidas(self):
+        self._comprar_fiado()  # vence 15/09/2026, ya pasó respecto de "hoy" real
+        response = self.client.get("/api/estadisticas/inicio/")
+        pendientes = response.data["pendientes"]
+        self.assertEqual(pendientes["facturas_por_pagar"], 1)
+        vencida = date(2026, 9, 15) < timezone.localtime(timezone.now()).date()
+        self.assertEqual(pendientes["facturas_vencidas"], 1 if vencida else 0)

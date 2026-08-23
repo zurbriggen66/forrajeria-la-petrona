@@ -18,15 +18,27 @@ export interface ProductosQuery {
   stock_status?: 'bajo' | 'sin_stock'
   activo?: boolean
   ordering?: string
+  page?: number
+  page_size?: number
 }
+
+/** Cuántos productos por página en los listados. El catálogo real tiene miles
+ * de ítems, así que la lista se pagina de verdad (ver componente Paginacion);
+ * traerlos todos de una colgaba la tabla. */
+export const PRODUCTOS_POR_PAGINA = 50
 
 export function useProductos(params: ProductosQuery = {}) {
   return useQuery({
     queryKey: ['productos', params],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<Producto>>('/productos/', { params: { page_size: 100, ...params } })
+      const { data } = await api.get<Paginated<Producto>>('/productos/', {
+        params: { page_size: PRODUCTOS_POR_PAGINA, ...params },
+      })
       return data
     },
+    // Mantener la página anterior mientras carga la siguiente evita que la
+    // tabla parpadee a vacío en cada click de paginado.
+    placeholderData: (previa) => previa,
   })
 }
 

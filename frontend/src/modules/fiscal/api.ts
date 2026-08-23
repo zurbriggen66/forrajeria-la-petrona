@@ -51,3 +51,20 @@ export function useFacturarVenta() {
     },
   })
 }
+
+/** Reintenta las ventas que quedaron sin CAE (ARCA caído al momento de cobrar). */
+export function useProcesarPendientes() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post<{ emitidas: number; fallidas: number; errores: string[] }>(
+        '/fiscal/cola/procesar-pendientes/',
+      )
+      return data
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-cola'] })
+      queryClient.invalidateQueries({ queryKey: ['ventas'] })
+    },
+  })
+}

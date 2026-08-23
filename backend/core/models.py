@@ -47,6 +47,12 @@ class Comercio(BaseModel):
     asistente_api_key_cifrada = models.TextField(blank=True, default="")
     # Modelo elegido por el comercio. Vacío = el default del servidor.
     asistente_modelo = models.CharField(max_length=60, blank=True, default="")
+    # Vender con stock en 0 (o insuficiente) no es necesariamente "no hay":
+    # muchos comercios cargan el catálogo antes de terminar de contar el
+    # depósito, y bloquear la venta ahí frenaría el mostrador por un dato que
+    # todavía está mal cargado, no por falta real de mercadería. Default True
+    # a propósito — bloquear por stock es la excepción, no la regla, acá.
+    permitir_venta_sin_stock = models.BooleanField(default=True)
 
     def __str__(self):
         return self.nombre

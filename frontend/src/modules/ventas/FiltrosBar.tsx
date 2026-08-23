@@ -2,6 +2,7 @@ import { Select } from '../../components/ui/Select'
 import { Input } from '../../components/ui/Input'
 import { useCategorias, useProveedores } from '../productos/api'
 import { useCuentasPago } from '../caja/api'
+import { PERIODOS } from '../../lib/periodos'
 import { useVendedores } from './api'
 import type { VentasFiltros } from './types'
 
@@ -22,8 +23,43 @@ export function FiltrosBar({ value, onChange }: Props) {
     onChange({ ...value, [key]: val || undefined })
   }
 
+  function aplicarPeriodo(desde: string, hasta: string) {
+    onChange({ ...value, fecha_desde: desde, fecha_hasta: hasta })
+  }
+
+  const activo = (desde: string, hasta: string) =>
+    value.fecha_desde === desde && value.fecha_hasta === hasta
+
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface p-4">
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+      <div className="flex flex-wrap gap-1.5">
+        {PERIODOS.map((p) => {
+          const [desde, hasta] = p.rango()
+          return (
+            <button
+              key={p.label} type="button" onClick={() => aplicarPeriodo(desde, hasta)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                activo(desde, hasta)
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-text-dim hover:bg-surface-2 hover:text-text'
+              }`}
+            >
+              {p.label}
+            </button>
+          )
+        })}
+        {(value.fecha_desde || value.fecha_hasta) && (
+          <button
+            type="button"
+            onClick={() => onChange({ ...value, fecha_desde: undefined, fecha_hasta: undefined })}
+            className="rounded-lg px-2.5 py-1 text-xs font-medium text-text-dim hover:bg-surface-2 hover:text-danger"
+          >
+            Limpiar fechas
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
       <Input
         id="f-desde" label="Desde" type="date"
         value={value.fecha_desde ?? ''} onChange={(e) => set('fecha_desde', e.target.value)}
@@ -48,6 +84,7 @@ export function FiltrosBar({ value, onChange }: Props) {
         <option value="">Todos</option>
         {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
       </Select>
+      </div>
     </div>
   )
 }

@@ -30,6 +30,11 @@ class Venta(TenantModel):
     monto_cuenta_corriente = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     efectivo_recibido = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     vuelto = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    # Cuenta desde la que se dio el vuelto, si fue distinta de la que cobró la
+    # venta (ej: cobra en efectivo pero da el vuelto por transferencia porque
+    # no hay billetes chicos). Null = se dio en la misma cuenta que cobró, que
+    # es el caso normal y no genera movimientos extra de caja.
+    vuelto_cuenta_pago = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     origen = models.CharField(max_length=40, default="pos")
     # anulación (NUNCA borrar una venta)
     anulada = models.BooleanField(default=False)

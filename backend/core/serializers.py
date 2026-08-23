@@ -12,11 +12,12 @@ class ComercioSerializer(serializers.ModelSerializer):
 
 class PerfilMeSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
     comercios = serializers.SerializerMethodField()
 
     class Meta:
         model = Perfil
-        fields = ["id", "nombre_completo", "rol", "email", "comercios"]
+        fields = ["id", "nombre_completo", "rol", "email", "username", "comercios"]
 
     @extend_schema_field(ComercioSerializer(many=True))
     def get_comercios(self, perfil):
@@ -50,7 +51,10 @@ class EmpleadoTurnoSerializer(serializers.ModelSerializer):
 class ComercioUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comercio
-        fields = ["id", "nombre", "cuit", "direccion", "telefono", "email", "logo_url", "rubro"]
+        fields = [
+            "id", "nombre", "cuit", "direccion", "telefono", "email", "logo_url", "rubro",
+            "permitir_venta_sin_stock",
+        ]
         read_only_fields = ["id"]
 
 
@@ -81,3 +85,28 @@ class UsuarioComercioInviteSerializer(serializers.Serializer):
     nombre_completo = serializers.CharField(max_length=200, required=False, allow_blank=True)
     rol = serializers.ChoiceField(choices=Perfil.ROLES, default="Cajero")
     password = serializers.CharField(write_only=True, min_length=6, required=False, allow_blank=True)
+
+
+class CambiarUsuarioSerializer(serializers.Serializer):
+    """Cambia el nombre de usuario (login) del usuario autenticado — no
+    confundir con el email, que es un dato aparte del comercio."""
+
+    username = serializers.CharField(max_length=150)
+
+    def validate_username(self, value):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        if User.objects.filter(username=value).exclude(pk=self.context["user"].pk).exists():
+            raise serializers.ValidationError("Ya hay otro usuario con ese nombre de usuario.")
+        return value
+
+
+class CambiarPasswordSerializer(serializers.Serializer):
+    password_actual = serializers.CharField(write_only=True)
+    password_nueva = serializers.CharField(write_only=True, min_length=6)
+
+    def validate_password_actual(self, value):
+        if not self.context["user"].check_password(value):
+            raise serializers.ValidationError("La contraseña actual no es correcta.")
+        return value

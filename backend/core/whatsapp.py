@@ -26,3 +26,41 @@ def enviar_whatsapp(telefono, mensaje):
         )
     except requests.RequestException:
         logger.warning("No se pudo enviar WhatsApp a %s", telefono, exc_info=True)
+
+
+def estado_whatsapp():
+    """Estado de vinculación del bot (para el QR en Config). La clave del bot
+    nunca llega al navegador: este endpoint la usa server-to-server y el
+    frontend sólo ve la respuesta ya resuelta."""
+    if not settings.WHATSAPP_BOT_URL:
+        return {"estado": "no_configurado", "qr": None}
+    try:
+        response = requests.get(
+            f"{settings.WHATSAPP_BOT_URL}/status",
+            headers={"x-api-key": settings.WHATSAPP_BOT_API_KEY},
+            timeout=5,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        logger.warning("No se pudo consultar el estado del bot de WhatsApp", exc_info=True)
+        return {"estado": "sin_conexion", "qr": None}
+
+
+def desconectar_whatsapp():
+    """Cierra la sesión vinculada (para cambiar de celular): el bot borra las
+    credenciales guardadas y arranca de cero, así el próximo /status ya trae
+    un QR nuevo para escanear."""
+    if not settings.WHATSAPP_BOT_URL:
+        return {"estado": "no_configurado", "qr": None}
+    try:
+        response = requests.post(
+            f"{settings.WHATSAPP_BOT_URL}/disconnect",
+            headers={"x-api-key": settings.WHATSAPP_BOT_API_KEY},
+            timeout=5,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        logger.warning("No se pudo desconectar el bot de WhatsApp", exc_info=True)
+        return {"estado": "sin_conexion", "qr": None}

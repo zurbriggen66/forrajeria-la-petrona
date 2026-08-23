@@ -3,8 +3,10 @@
 // Uso: npm install && node index.js — escanear el QR la primera vez, la sesión
 // queda guardada en ./auth/ y no hace falta volver a escanear.
 require("dotenv").config();
+const fs = require("fs");
 const express = require("express");
-const qrcode = require("qrcode-terminal");
+const qrcodeTerminal = require("qrcode-terminal");
+const qrcode = require("qrcode");
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -15,17 +17,27 @@ const PORT = process.env.PORT || 3001;
 const API_KEY = process.env.API_KEY || "";
 
 let sock;
+// Estado consultado por GET /status (lo usa el panel de Config del ERP para
+// mostrar el QR sin depender de mirar la terminal del bot).
+let estado = { estado: "conectando", qr: null };
 
 async function conectar() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   sock = makeWASocket({ auth: state });
 
   sock.ev.on("creds.update", saveCreds);
-  sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
-    if (qr) qrcode.generate(qr, { small: true });
+  sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      qrcodeTerminal.generate(qr, { small: true });
+      estado = { estado: "esperando_qr", qr: await qrcode.toDataURL(qr) };
+    }
+    if (connection === "open") {
+      estado = { estado: "conectado", qr: null };
+    }
     if (connection === "close") {
       const debeReconectar =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      estado = { estado: "desconectado", qr: null };
       if (debeReconectar) conectar();
     }
   });
@@ -46,6 +58,13 @@ function telefonoAJid(telefono) {
 const app = express();
 app.use(express.json());
 
+app.get("/status", (req, res) => {
+  if (API_KEY && req.header("x-api-key") !== API_KEY) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  res.json(estado);
+});
+
 app.post("/send", async (req, res) => {
   if (API_KEY && req.header("x-api-key") !== API_KEY) {
     return res.status(401).json({ error: "unauthorized" });
@@ -61,6 +80,26 @@ app.post("/send", async (req, res) => {
       return res.status(422).json({ error: `${telefono} no tiene WhatsApp` });
     }
     await sock.sendMessage(info.jid, { text: mensaje });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(502).json({ error: String(err) });
+  }
+});
+
+// Para cambiar de celular: cierra la sesión vinculada y borra las
+// credenciales guardadas, así el bot arranca de cero y el próximo /status
+// ya trae un QR nuevo para escanear desde el celular nuevo.
+app.post("/disconnect", async (req, res) => {
+  if (API_KEY && req.header("x-api-key") !== API_KEY) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  try {
+    if (sock) {
+      await sock.logout().catch(() => {});
+    }
+    fs.rmSync("auth", { recursive: true, force: true });
+    estado = { estado: "conectando", qr: null };
+    conectar();
     res.json({ ok: true });
   } catch (err) {
     res.status(502).json({ error: String(err) });

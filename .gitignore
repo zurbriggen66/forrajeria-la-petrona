@@ -1,1 +1,17 @@
 backend_venv/
+
+# Red de seguridad global. Cada componente tiene su propio .gitignore con las
+# reglas finas; esto es para que un archivo sensible no se cuele por estar en
+# una carpeta nueva que todavía no tiene el suyo.
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.key
+*.crt
+*.csr
+__pycache__/
+*.pyc
+node_modules/
+dist/
+seed.json

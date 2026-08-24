@@ -13,25 +13,9 @@ siguiendo ROADMAP.md, montados bajo /api/<modulo>/.
 
 from django.conf import settings
 from django.contrib import admin
-from django.http import Http404, HttpResponse
-from django.urls import include, path, re_path
+from django.urls import include, path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-
-FRONTEND_INDEX = settings.BASE_DIR.parent / "frontend" / "dist" / "index.html"
-
-
-def spa_index(request, **kwargs):
-    """Sirve el index.html del SPA para cualquier ruta de React Router.
-
-    En el VPS esto lo resuelve nginx (`try_files $uri /index.html`). Acá no
-    hay nginx delante (PythonAnywhere), así que Django hace el mismo fallback:
-    todo lo que no matchee /api/, /admin/ o /static/ cae acá.
-    """
-    if not FRONTEND_INDEX.exists():
-        raise Http404
-    return HttpResponse(FRONTEND_INDEX.read_bytes(), content_type="text/html")
-
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -60,9 +44,3 @@ if settings.DEBUG:
         path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
         path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     ]
-
-# Catch-all del SPA — tiene que ir último: cualquier ruta que no matcheó
-# arriba (api/, admin/) es una ruta de React Router (/pos, /clientes, ...).
-urlpatterns += [
-    re_path(r"^(?!api/|admin/|static/).*$", spa_index, name="spa"),
-]

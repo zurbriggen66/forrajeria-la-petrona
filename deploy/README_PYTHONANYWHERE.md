@@ -1,9 +1,13 @@
-# Despliegue — PythonAnywhere (ignaciozurbriggen)
+# Despliegue — PythonAnywhere (backend) + Vercel (frontend)
 
-Alternativa a `deploy/README.md` (pensado para un VPS con nginx). Acá no hay
-nginx: PythonAnywhere sirve la app WSGI directo y los estáticos por mapeos
-propios. El bot de WhatsApp queda **apagado** — el refactor para que corra
-en este entorno todavía no está terminado.
+Alternativa a `deploy/README.md` (pensado para un VPS con nginx sirviendo
+todo desde un origen). Acá son **dos orígenes distintos**: la API en
+PythonAnywhere, el SPA en Vercel. Eso implica CORS configurado (no hay forma
+de evitarlo cuando front y back viven en dominios distintos) y el
+`VITE_API_URL` apuntando al backend en vez de quedar vacío.
+
+El bot de WhatsApp queda **apagado** — el refactor para que corra en este
+entorno todavía no está terminado.
 
 Dominio de ejemplo: `ignaciozurbriggen.pythonanywhere.com`. Reemplazalo si
 usás un dominio propio.
@@ -45,6 +49,9 @@ git checkout deploy-prep   # o la rama/PR final que se mergee a main
 
 Repo privado: si el `clone` pide usuario/contraseña, usá un Personal Access
 Token de GitHub como contraseña (Settings → Developer settings → Tokens).
+Con el back en PA y el front en Vercel no hace falta la carpeta `frontend/`
+en el servidor — pero clonar el repo entero no molesta, y simplifica el
+`git pull` de actualizaciones después.
 
 ## 2. Base de datos
 
@@ -65,7 +72,16 @@ Editalo (`nano .env`) con:
 SECRET_KEY=<generar: python -c "import secrets;print(secrets.token_urlsafe(50))">
 DEBUG=False
 ALLOWED_HOSTS=ignaciozurbriggen.pythonanywhere.com
+
+# Solo hace falta para el login de /admin/, que se abre directo en PA
+# (Vercel no pasa por acá).
 CSRF_TRUSTED_ORIGINS=https://ignaciozurbriggen.pythonanywhere.com
+
+# El dominio de Vercel — sin esto el navegador bloquea las llamadas del
+# SPA a la API por CORS. Agregá los dos si usás preview deployments
+# (*.vercel.app) además del dominio de producción.
+CORS_ALLOWED_ORIGINS=https://TU-PROYECTO.vercel.app
+
 DATABASE_URL=postgres://usuario:password@host:puerto/nombre_db
 ANTHROPIC_API_KEY=          # opcional, vacío = asistente apagado
 ```
@@ -100,32 +116,7 @@ Después borrá `deploy/seed.json` del servidor (`rm ../deploy/seed.json`) —
 tiene datos personales reales y ya cumplió su función. La base de Postgres
 pasa a ser la fuente de verdad.
 
-## 5. Frontend
-
-PA no trae Node moderno por apt y no hay `sudo` para instalarlo — se instala
-en tu home con `nvm` (una sola vez):
-
-```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.bashrc
-nvm install 22
-```
-
-Build:
-
-```bash
-cd ~/app/frontend
-npm ci
-VITE_API_URL= npm run build
-```
-
-`VITE_API_URL` vacío a propósito: front y API salen del mismo origen acá
-(no hay CORS que configurar), así que las llamadas van a `/api/...`
-relativo. Si algún día servís el frontend desde otro dominio, hay que
-volver a buildear con el `VITE_API_URL` correspondiente — se hornea en
-tiempo de build, igual que en el runbook del VPS.
-
-## 6. Configurar la Web app
+## 5. Configurar la Web app en PythonAnywhere
 
 Pestaña **Web** → **Add a new web app** → **Manual configuration** → la
 versión de Python que usaste en el paso 0.
@@ -151,41 +142,57 @@ from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 ```
 
-**Static files** (tabla de la misma pestaña Web):
+**Static files** (tabla de la misma pestaña Web) — solo hace falta el admin
+de Django, el frontend lo sirve Vercel:
 
 | URL | Directory |
 |---|---|
 | `/static/` | `/home/ignaciozurbriggen/app/backend/staticfiles` |
-| `/assets/` | `/home/ignaciozurbriggen/app/frontend/dist/assets` |
-| `/favicon.svg` | `/home/ignaciozurbriggen/app/frontend/dist/favicon.svg` |
-| `/icons.svg` | `/home/ignaciozurbriggen/app/frontend/dist/icons.svg` |
-
-Todo lo que no matchee esas rutas (ni `/api/`, ni `/admin/`) lo maneja
-Django: `config/urls.py` tiene un catch-all que devuelve
-`frontend/dist/index.html`, el mismo trabajo que hacía `try_files` en
-nginx — así `/pos` o `/clientes` andan al recargar la página.
 
 **Force HTTPS**: activalo (checkbox al final de la pestaña Web).
 
 Click **Reload**.
 
+## 6. Frontend en Vercel
+
+En el proyecto de Vercel (import desde el mismo repo de GitHub, rama
+`deploy-prep` o la que se mergee a main):
+
+- **Root Directory**: `frontend`
+- **Environment Variable**: `VITE_API_URL` = `https://ignaciozurbriggen.pythonanywhere.com`
+  (se hornea en build — si el dominio de PA cambia algún día, hay que
+  redeployar para que tome el nuevo valor).
+- Framework preset: Vite (Vercel lo detecta solo).
+
+Vercel resuelve el ruteo de React Router (`/pos`, `/clientes` al recargar)
+automáticamente para proyectos Vite/SPA, no hace falta configurar nada
+extra ahí.
+
+Una vez que el deploy de Vercel termine, copiá su dominio (`https://TU-
+PROYECTO.vercel.app`) y confirmá que coincide con el `CORS_ALLOWED_ORIGINS`
+del paso 3 — si no coincide exacto (con `https://`, sin `/` final), el SPA
+no va a poder ni loguearse.
+
 ## Verificación
 
-- [ ] `https://ignaciozurbriggen.pythonanywhere.com` carga el SPA y el login funciona
+- [ ] El SPA en Vercel carga y el login funciona (revisa la consola del
+      navegador por errores de CORS si falla)
 - [ ] Recargar la página en `/clientes` o `/pos` (F5) no da 404
-- [ ] `/admin/` con estilos, sin 403 de CSRF
+- [ ] `https://ignaciozurbriggen.pythonanywhere.com/admin/` con estilos, sin 403 de CSRF
 - [ ] Los conteos del paso 4 coinciden
 - [ ] El POS cobra una venta de prueba
-- [ ] `python manage.py test` pasa contra la Postgres de PA (242 tests + los nuevos de `config`)
+- [ ] `python manage.py test` pasa contra la Postgres de PA (242 tests)
 
 ## Actualizar después
 
+**Backend:**
 ```bash
 cd ~/app && git pull
 workon petrona-venv
 pip install -r backend/requirements.txt
 cd backend && python manage.py migrate && python manage.py collectstatic --noinput
-cd ../frontend && VITE_API_URL= npm run build
 ```
+Pestaña Web → **Reload**.
 
-Después, pestaña Web → **Reload**.
+**Frontend:** Vercel redeploya solo con cada push a la rama conectada — no
+hace falta ningún paso manual.

@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  Check, Loader2, MapPin, Package, Pencil, Phone, Plus, Search, Trash2, Truck, X,
+  Check, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { HojaReparto, HojaRutaDelDia } from './HojaReparto'
 import { Input } from '../../components/ui/Input'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { useToast } from '../../context/ToastContext'
+import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatFechaSola, formatMoney } from '../../lib/format'
 import { RepartoFormModal } from './RepartoFormModal'
@@ -34,12 +36,13 @@ const SIGUIENTE: Partial<Record<EstadoReparto, { estado: EstadoReparto; label: s
 }
 
 function TarjetaReparto({
-  reparto, onEditar, onCambiarEstado, onEliminar,
+  reparto, onEditar, onCambiarEstado, onEliminar, onImprimir,
 }: {
   reparto: Reparto
   onEditar: () => void
   onCambiarEstado: (estado: EstadoReparto) => void
   onEliminar: () => void
+  onImprimir: () => void
 }) {
   const siguiente = SIGUIENTE[reparto.estado]
 
@@ -107,6 +110,9 @@ function TarjetaReparto({
           </Button>
         )}
         <div className="ml-auto flex items-center gap-1">
+          <button onClick={onImprimir} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir hoja de ${reparto.cliente_nombre}`}>
+            <Printer size={14} />
+          </button>
           <button onClick={onEditar} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar reparto de ${reparto.cliente_nombre}`}>
             <Pencil size={14} />
           </button>
@@ -124,6 +130,21 @@ export function Repartos() {
   const [filtros, setFiltros] = useState<RepartoFiltros>({})
   const [busqueda, setBusqueda] = useState('')
   const [modal, setModal] = useState<'nuevo' | Reparto | null>(null)
+  // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
+  // .hoja-impresion, así que tener varias montadas saldría todo junto.
+  const [aImprimir, setAImprimir] = useState<Reparto | 'ruta' | null>(null)
+
+  useEffect(() => {
+    if (!aImprimir) return
+    // Un frame de espera: print() bloquea, y llamado en el mismo ciclo la hoja
+    // todavía no está pintada. Al terminar se desmonta, para que volver a
+    // imprimir lo mismo dispare el efecto de nuevo.
+    const id = requestAnimationFrame(() => {
+      imprimir()
+      setAImprimir(null)
+    })
+    return () => cancelAnimationFrame(id)
+  }, [aImprimir])
 
   const { data: repartos, isLoading } = useRepartos({ ...filtros, search: busqueda || undefined })
   const cambiarEstado = useCambiarEstadoReparto()
@@ -191,6 +212,14 @@ export function Repartos() {
             </button>
           ))}
         </div>
+        <Button
+          variant="secondary" className="shrink-0"
+          onClick={() => setAImprimir('ruta')}
+          disabled={activos.length === 0}
+          title="Todas las entregas pendientes en un solo papel, para el repartidor"
+        >
+          <Printer size={15} /> Hoja de ruta
+        </Button>
         <Button onClick={() => setModal('nuevo')} className="shrink-0">
           <Plus size={15} /> Nuevo reparto
         </Button>
@@ -213,6 +242,7 @@ export function Repartos() {
             <TarjetaReparto
               key={r.id}
               reparto={r}
+              onImprimir={() => setAImprimir(r)}
               onEditar={() => setModal(r)}
               onCambiarEstado={(estado) => handleCambiarEstado(r, estado)}
               onEliminar={() => handleEliminar(r)}
@@ -225,6 +255,12 @@ export function Repartos() {
         Los repartos no descuentan stock ni entran a la caja: son la hoja de ruta. El cobro se registra
         como venta en el POS cuando corresponda.
       </p>
+
+      {/* Invisible en pantalla: sólo existe para el papel (ver .hoja-impresion). */}
+      {aImprimir === 'ruta' && (
+        <HojaRutaDelDia repartos={activos} fecha={activos[0]?.fecha ?? new Date().toISOString().slice(0, 10)} />
+      )}
+      {aImprimir && aImprimir !== 'ruta' && <HojaReparto reparto={aImprimir} />}
 
       {modal && (
         <RepartoFormModal

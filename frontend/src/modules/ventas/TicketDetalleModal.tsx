@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { AlertTriangle, Ban, Loader2 } from 'lucide-react'
+import { AlertTriangle, Ban, Loader2, Printer } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
+import { Remito } from './Remito'
 import { useToast } from '../../context/ToastContext'
+import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useAnularVenta } from './api'
@@ -31,6 +33,7 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
 
   return (
     <Modal title={`Ticket #${venta.numero_ticket ?? '—'}`} onClose={onClose}>
+      <Remito venta={venta} />
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-dim">
           <span>{formatFecha(venta.created_at)}</span>
@@ -80,11 +83,16 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
           )}
         </div>
 
-        {!venta.anulada && !anulando && (
-          <Button variant="danger" onClick={() => setAnulando(true)}>
-            <Ban size={15} /> Anular venta
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={imprimir}>
+            <Printer size={15} /> Imprimir remito
           </Button>
-        )}
+          {!venta.anulada && !anulando && (
+            <Button variant="danger" onClick={() => setAnulando(true)}>
+              <Ban size={15} /> Anular venta
+            </Button>
+          )}
+        </div>
 
         {anulando && (
           <form onSubmit={handleAnular} className="flex flex-col gap-2 rounded-lg border border-danger/30 p-3">

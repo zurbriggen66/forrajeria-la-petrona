@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { CheckCircle2, CloudOff, Loader2, Receipt } from 'lucide-react'
+import { CheckCircle2, CloudOff, Loader2, Printer, Receipt } from 'lucide-react'
 import { Modal } from '../../components/ui/Modal'
 import { Button } from '../../components/ui/Button'
+import { Remito } from '../ventas/Remito'
 import { useToast } from '../../context/ToastContext'
 import { useFacturarVenta } from '../fiscal/api'
+import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { precioUnitario } from './precio'
@@ -40,6 +42,7 @@ export function TicketModal({ data, onNuevaVenta }: { data: TicketData; onNuevaV
 
   return (
     <Modal title={venta ? `Ticket #${venta.numero_ticket}` : 'Venta guardada offline'} onClose={onNuevaVenta}>
+      {venta && <Remito venta={venta} />}
       <div className="flex flex-col gap-4">
         {venta ? (
           <div className="flex items-center gap-2 rounded-lg bg-accent-2/10 p-3 text-sm text-accent-2">
@@ -115,6 +118,14 @@ export function TicketModal({ data, onNuevaVenta }: { data: TicketData; onNuevaV
               Facturar (emitir CAE)
             </Button>
           )
+        )}
+
+        {/* Sólo con la venta confirmada: una venta encolada offline todavía no
+            tiene número de ticket, y un remito sin número no sirve de nada. */}
+        {venta && (
+          <Button variant="secondary" onClick={imprimir} className="justify-center">
+            <Printer size={15} /> Imprimir remito
+          </Button>
         )}
 
         <Button onClick={onNuevaVenta} className="justify-center py-3">Nueva venta</Button>

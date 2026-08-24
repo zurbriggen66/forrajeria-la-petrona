@@ -86,3 +86,155 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Hojas para imprimir (remitos, hojas de reparto).
+
+   La hoja se monta en un portal colgado de <body>, invisible en pantalla. Al
+   imprimir se esconde el resto: así el papel sale limpio sin importar qué
+   modal o menú estaba abierto, y no hace falta abrir otra pestaña.
+
+   Siempre en claro sobre blanco: el sistema tiene tema oscuro y un fondo
+   oscuro se lleva puesto un cartucho de tinta por hoja.
+   --------------------------------------------------------------------------- */
+.hoja-impresion {
+  display: none;
+}
+
+@media print {
+  body > *:not(.hoja-impresion) {
+    display: none !important;
+  }
+
+  .hoja-impresion {
+    display: block;
+    color: #000;
+    background: #fff;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 11pt;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  /* Que una hoja de reparto no quede cortada al medio entre dos páginas. */
+  .hoja-corte {
+    break-after: page;
+    page-break-after: always;
+  }
+  .hoja-corte:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .no-cortar {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* Estilos de las hojas impresas. Van en CSS plano y no en clases de Tailwind
+   porque los tokens del tema son oscuros: acá manda el papel. */
+@media print {
+  .hoja-membrete {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12mm;
+    border-bottom: 2px solid #000;
+    padding-bottom: 3mm;
+    margin-bottom: 5mm;
+  }
+  .hoja-comercio { font-size: 15pt; font-weight: 700; }
+  .hoja-datos { font-size: 9pt; color: #444; }
+  .hoja-titulo-bloque { text-align: right; }
+  .hoja-titulo { font-size: 15pt; font-weight: 700; letter-spacing: .06em; }
+  .hoja-numero { font-size: 11pt; font-weight: 600; }
+
+  .hoja-bloque {
+    border: 1px solid #999;
+    padding: 3mm;
+    margin-bottom: 4mm;
+  }
+  .hoja-etiqueta {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #555;
+  }
+  .hoja-valor { font-size: 11pt; font-weight: 600; }
+  .hoja-valor-grande { font-size: 14pt; font-weight: 700; }
+
+  .hoja-tabla { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+  .hoja-tabla th {
+    text-align: left;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    border-bottom: 1.5px solid #000;
+    padding: 1.5mm 2mm;
+  }
+  .hoja-tabla td {
+    padding: 1.8mm 2mm;
+    border-bottom: 1px solid #ddd;
+    font-size: 10.5pt;
+    vertical-align: top;
+  }
+  .hoja-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .hoja-totales { margin-left: auto; width: 70mm; }
+  .hoja-totales div {
+    display: flex;
+    justify-content: space-between;
+    padding: 1mm 0;
+    font-size: 10.5pt;
+  }
+  .hoja-total-final {
+    border-top: 1.5px solid #000;
+    margin-top: 1mm;
+    padding-top: 2mm !important;
+    font-size: 13pt !important;
+    font-weight: 700;
+  }
+
+  .hoja-aviso {
+    border: 1.5px solid #000;
+    padding: 2.5mm;
+    text-align: center;
+    font-weight: 700;
+    font-size: 11pt;
+    margin-bottom: 4mm;
+  }
+  .hoja-pie {
+    margin-top: 8mm;
+    font-size: 8.5pt;
+    color: #555;
+    text-align: center;
+    border-top: 1px solid #ccc;
+    padding-top: 2mm;
+  }
+  .hoja-firma {
+    margin-top: 14mm;
+    display: flex;
+    justify-content: space-between;
+    gap: 15mm;
+  }
+  .hoja-firma div {
+    flex: 1;
+    border-top: 1px solid #000;
+    padding-top: 1.5mm;
+    font-size: 8.5pt;
+    text-align: center;
+    color: #555;
+  }
+
+  /* Casilla para tildar cada bulto al cargar el reparto. */
+  .hoja-check {
+    display: inline-block;
+    width: 4.5mm;
+    height: 4.5mm;
+    border: 1.2px solid #000;
+    vertical-align: middle;
+  }
+}

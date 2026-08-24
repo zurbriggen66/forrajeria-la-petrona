@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Search } from 'lucide-react'
 import { formatMoney } from '../../lib/format'
 import { etiquetaEnvase } from '../productos/presentacion'
+import { buscarProductoPorCodigo, useBuscarProductosPos } from './api'
 import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
 
@@ -13,15 +14,13 @@ interface Props {
 export function ProductSearch({ productos, onAgregar }: Props) {
   const [query, setQuery] = useState('')
   const [highlightIndex, setHighlightIndex] = useState(0)
+  const [buscandoCodigo, setBuscandoCodigo] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const resultados = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (q.length < 1) return []
-    return productos
-      .filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.includes(q))
-      .slice(0, 8)
-  }, [query, productos])
+  // Busca contra el servidor sobre el catálogo completo; `productos` (la copia
+  // local, parcial) queda como respaldo mientras viaja la request y para
+  // vender sin conexión.
+  const resultados = useBuscarProductosPos(query, productos)
 
   useEffect(() => {
     setHighlightIndex(0)
@@ -33,7 +32,7 @@ export function ProductSearch({ productos, onAgregar }: Props) {
     inputRef.current?.focus()
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  async function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Escape') {
       setQuery('')
       return
@@ -54,12 +53,25 @@ export function ProductSearch({ productos, onAgregar }: Props) {
     e.preventDefault()
     // Lector de código de barras / Enter: siempre agrega en modo suelto —
     // vender la bolsa es una acción explícita del cajero (botón aparte).
-    const exacto = productos.find((p) => p.codigo_barras === query.trim())
+    const codigo = query.trim()
+    if (!codigo) return
+
+    const exacto = resultados.find((p) => p.codigo_barras === codigo)
+      ?? productos.find((p) => p.codigo_barras === codigo)
     if (exacto) {
       agregar(exacto, false)
-    } else if (resultados[highlightIndex]) {
-      agregar(resultados[highlightIndex], false)
+      return
     }
+    if (resultados[highlightIndex]) {
+      agregar(resultados[highlightIndex], false)
+      return
+    }
+    // El lector manda Enter antes de que responda la búsqueda con debounce, y
+    // el producto puede no estar en la copia local: se pregunta directo.
+    setBuscandoCodigo(true)
+    const encontrado = await buscarProductoPorCodigo(codigo)
+    setBuscandoCodigo(false)
+    if (encontrado) agregar(encontrado, false)
   }
 
   return (
@@ -76,6 +88,15 @@ export function ProductSearch({ productos, onAgregar }: Props) {
           className="w-full rounded-lg border border-border bg-surface-2 py-2.5 pl-10 pr-3 text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
       </div>
+
+      {/* Silencio ante una búsqueda sin resultados fue lo que escondió durante
+          semanas que el POS sólo veía una parte del catálogo: el cajero no
+          tenía forma de distinguir "no existe" de "no lo estoy encontrando". */}
+      {query.trim().length > 0 && resultados.length === 0 && (
+        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-dim shadow-xl">
+          {buscandoCodigo ? 'Buscando…' : `No hay productos que coincidan con "${query.trim()}".`}
+        </div>
+      )}
 
       {resultados.length > 0 && (
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-lg">

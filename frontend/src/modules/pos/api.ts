@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { api } from '../../lib/api'
-import type { Paginated } from '../productos/types'
+import { useDebounce } from '../../lib/useDebounce'
+import type { Paginated, Producto } from '../productos/types'
 import { encolarVenta } from './offlineQueue'
 import type { Cliente, CuentaPago, VentaInput, VentaResult } from './types'
 
@@ -61,5 +63,59 @@ export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>): Promise<
     }
     await encolarVenta(payload)
     return { status: 'queued' }
+  }
+}
+
+/** Busca en TODO el catálogo, contra el servidor.
+ *
+ * El POS cachea sólo los primeros productos para poder vender sin conexión
+ * (useCatalogoPOS), y durante un tiempo el buscador filtraba únicamente sobre
+ * esa copia: con 6.482 productos en catálogo, el 92% era imposible de
+ * encontrar en el mostrador. `catalogoLocal` queda como respaldo inmediato
+ * mientras viaja la request, y como único recurso si no hay red.
+ */
+export function useBuscarProductosPos(query: string, catalogoLocal: Producto[]) {
+  const q = query.trim()
+  const diferida = useDebounce(q, 200)
+
+  const { data, isError } = useQuery({
+    queryKey: ['pos-buscar-productos', diferida],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<Producto>>('/productos/', {
+        params: { search: diferida, activo: true, page_size: 20 },
+      })
+      return data.results
+    },
+    enabled: diferida.length >= 1,
+    placeholderData: (previa) => previa,
+  })
+
+  const locales = useMemo(() => {
+    const min = q.toLowerCase()
+    if (!min) return []
+    return catalogoLocal.filter(
+      (p) => p.nombre.toLowerCase().includes(min) || p.codigo_barras.includes(min),
+    )
+  }, [q, catalogoLocal])
+
+  if (!q) return []
+  // Sin respuesta del servidor todavía (o sin red) se muestra lo que haya en
+  // el catálogo local: el mostrador no puede quedarse esperando.
+  const usarServidor = data !== undefined && !isError && diferida === q
+  return (usarServidor ? data : locales).slice(0, 8)
+}
+
+/** Lookup exacto por código de barras para el lector.
+ *
+ * El lector tipea y manda Enter más rápido de lo que responde la búsqueda con
+ * debounce, así que acá se pregunta directo en vez de esperar. */
+export async function buscarProductoPorCodigo(codigo: string): Promise<Producto | null> {
+  try {
+    const { data } = await api.get<Paginated<Producto>>('/productos/', {
+      params: { search: codigo, activo: true, page_size: 5 },
+    })
+    return data.results.find((p) => p.codigo_barras === codigo) ?? null
+  } catch {
+    return null
   }
 }

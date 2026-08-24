@@ -34,7 +34,7 @@ class ProductoUniversal(BaseModel):
 
 
 class Producto(TenantModel):
-    UNIDADES = [("unidad", "unidad"), ("kg", "kg"), ("g", "g"), ("lt", "lt")]
+    UNIDADES = [("unidad", "unidad"), ("kg", "kg"), ("g", "g"), ("lt", "lt"), ("m", "m")]
     codigo_barras = models.CharField(max_length=64, blank=True, db_index=True)
     nombre = models.CharField(max_length=200, db_index=True)
     descripcion = models.TextField(blank=True)
@@ -49,10 +49,17 @@ class Producto(TenantModel):
     stock_minimo = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     stock_reservado = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     stock_deposito = models.DecimalField(max_digits=14, decimal_places=3, default=0)
-    # venta a granel — el mismo producto puede venderse suelto por kg (precio_venta,
-    # interpretado "por kg" cuando venta_por_peso=True) y, opcionalmente, también en
-    # bolsa cerrada de bolsa_kg kilos a precio_bolsa. El stock siempre se guarda en kg:
-    # las dos formas de venta descuentan del mismo pozo (ver ventas/views.py).
+    # Venta fraccionada. Pese al nombre histórico de los campos (venta_por_peso,
+    # bolsa_kg) esto no es sólo para peso: sirve para cualquier producto que se
+    # venda suelto desde una presentación cerrada, y la unidad la fija
+    # unidad_medida —
+    #   kg     alimento balanceado suelto, o la bolsa de 20 kg
+    #   m      soga por metro, o el rollo de 15 m
+    #   unidad tornillos por unidad, o la caja de 500
+    # precio_venta se interpreta "por unidad_medida" cuando venta_por_peso=True,
+    # y precio_bolsa es el de la presentación cerrada de bolsa_kg unidades.
+    # El stock se guarda SIEMPRE en unidad_medida: las dos formas de venta
+    # descuentan del mismo pozo (ver ventas/views.py).
     venta_por_peso = models.BooleanField(default=False)
     unidad_medida = models.CharField(max_length=20, choices=UNIDADES, default="unidad")
     precio_bolsa = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)

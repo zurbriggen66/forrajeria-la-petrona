@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Search } from 'lucide-react'
 import { formatMoney } from '../../lib/format'
+import { etiquetaEnvase } from '../productos/presentacion'
 import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
 
@@ -111,7 +112,7 @@ export function ProductSearch({ productos, onAgregar }: Props) {
                       onClick={(e) => { e.stopPropagation(); agregar(p, true) }}
                       className="rounded-lg border border-accent/40 bg-accent/10 px-2 py-1.5 text-xs tabular-nums text-accent hover:bg-accent/20"
                     >
-                      Bolsa {Number(p.bolsa_kg)}kg · {formatMoney(p.precio_bolsa!)}
+                      {etiquetaEnvase(p.unidad_medida, p.bolsa_kg)} · {formatMoney(p.precio_bolsa!)}
                     </button>
                   </div>
                 ) : (

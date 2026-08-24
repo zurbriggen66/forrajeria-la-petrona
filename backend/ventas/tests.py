@@ -856,3 +856,98 @@ class VueltoPorOtraCuentaTests(APITestCase):
         ).aggregate(t=models.Sum("monto"))["t"]
         self.assertEqual(ingresos_transferencia, Decimal("2000.00"))
         self.assertEqual(egresos_transferencia, Decimal("2000.00"))
+
+
+class VentaFraccionadaMetroYUnidadTests(APITestCase):
+    """La venta fraccionada no es sólo para peso: la soga se corta por metro y
+    los tornillos se venden de a uno, en los dos casos desde una presentación
+    cerrada (el rollo, la caja) que también se puede vender entera.
+
+    Es el mismo mecanismo que la bolsa de balanceado — estos tests fijan que
+    funcione con unidad_medida="m" y "unidad", que es lo que pidió el cliente.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        # Rollo de 15 m a $9.000; suelta, la soga sale $700 el metro.
+        self.soga = Producto.objects.create(
+            comercio=self.comercio, nombre="Soga de nylon 8mm",
+            precio_costo=Decimal("400"), precio_venta=Decimal("700"), stock=Decimal("45"),
+            venta_por_peso=True, unidad_medida="m",
+            bolsa_kg=Decimal("15"), precio_bolsa=Decimal("9000"),
+        )
+        # Caja de 500 tornillos a $20.000; sueltos, $50 cada uno.
+        self.tornillo = Producto.objects.create(
+            comercio=self.comercio, nombre="Tornillo autoperforante 8x1",
+            precio_costo=Decimal("25"), precio_venta=Decimal("50"), stock=Decimal("1500"),
+            venta_por_peso=True, unidad_medida="unidad",
+            bolsa_kg=Decimal("500"), precio_bolsa=Decimal("20000"),
+        )
+
+    def _vender(self, producto, cantidad, es_bolsa=False):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(producto.id), "cantidad": str(cantidad), "es_bolsa": es_bolsa}],
+        }, format="json")
+
+    def test_vender_3_metros_de_soga_de_un_rollo(self):
+        response = self._vender(self.soga, "3")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("2100.00"), "3 m a $700")
+
+        self.soga.refresh_from_db()
+        self.assertEqual(self.soga.stock, Decimal("42.000"), "45 m - 3 m")
+
+    def test_vender_20_tornillos_sueltos_de_una_caja(self):
+        response = self._vender(self.tornillo, "20")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("1000.00"), "20 tornillos a $50")
+
+        self.tornillo.refresh_from_db()
+        self.assertEqual(self.tornillo.stock, Decimal("1480.000"), "1500 - 20")
+
+    def test_vender_el_rollo_entero_descuenta_sus_metros(self):
+        response = self._vender(self.soga, "1", es_bolsa=True)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("9000.00"))
+
+        self.soga.refresh_from_db()
+        self.assertEqual(self.soga.stock, Decimal("30.000"), "45 m - 15 m del rollo")
+
+    def test_vender_la_caja_entera_descuenta_sus_unidades(self):
+        response = self._vender(self.tornillo, "1", es_bolsa=True)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("20000.00"))
+
+        self.tornillo.refresh_from_db()
+        self.assertEqual(self.tornillo.stock, Decimal("1000.000"), "1500 - 500 de la caja")
+
+    def test_suelto_y_cerrado_salen_del_mismo_stock(self):
+        """Lo importante del mecanismo: cortar 5 m y vender un rollo entero
+        descuentan del mismo pozo, no de dos stocks separados."""
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [
+                {"producto": str(self.soga.id), "cantidad": "5", "es_bolsa": False},
+                {"producto": str(self.soga.id), "cantidad": "1", "es_bolsa": True},
+            ],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        # 5 m a $700 = 3.500 + rollo $9.000
+        self.assertEqual(Decimal(response.data["total"]), Decimal("12500.00"))
+
+        self.soga.refresh_from_db()
+        self.assertEqual(self.soga.stock, Decimal("25.000"), "45 - 5 sueltos - 15 del rollo")
+
+    def test_el_costo_del_envase_cerrado_es_por_su_contenido(self):
+        """El margen del rollo tiene que compararse contra lo que costaron sus
+        15 m, no contra el costo de un metro."""
+        response = self._vender(self.soga, "1", es_bolsa=True)
+        item = Venta.objects.get(id=response.data["id"]).items.first()
+        self.assertEqual(item.costo_unitario, Decimal("6000.00"), "$400/m * 15 m")
+        self.assertEqual(item.peso_kg, Decimal("15.000"), "registra los metros reales descontados")

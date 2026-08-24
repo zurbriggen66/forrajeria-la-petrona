@@ -46,10 +46,14 @@ function CantidadPorPeso({ item, onCambiarCantidad }: {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
+        {/* step="any" y no "0.001": las flechitas suben de a 1 (que es como se
+            cuentan bolsas, tornillos y metros) pero sigue aceptando decimales
+            tipeados, como 2,5 kg. */}
         <input
           id={cantidadInputId(item.producto.id, item.esBolsa)}
-          type="number" step={modo === 'kg' ? '0.001' : '1'} min="0"
+          type="number" step="any" min="0"
           placeholder={modo === 'kg' ? '0.000' : '0'}
+          onFocus={(e) => e.target.select()}
           value={modo === 'kg' ? item.cantidad : montoTexto}
           onChange={(e) => (
             modo === 'kg'

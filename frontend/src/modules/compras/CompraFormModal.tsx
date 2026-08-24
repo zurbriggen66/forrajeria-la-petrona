@@ -122,7 +122,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
                 <div key={i} className="grid grid-cols-[1fr_90px_120px_110px_28px] items-center gap-2">
                   <ProductoPicker producto={row.producto} onSelect={(p) => elegirProducto(i, p)} />
                   <Input
-                    aria-label="Cantidad" type="number" min="0.001" step="0.001" value={row.cantidad}
+                    aria-label="Cantidad" type="number" min="0.001" step="any" value={row.cantidad}
                     onChange={(e) => updateItem(i, { cantidad: e.target.value })}
                   />
                   <Input

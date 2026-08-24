@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { formatMoney } from '../../lib/format'
 import { useCategorias } from '../productos/api'
+import { etiquetaEnvase } from '../productos/presentacion'
 import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
 
@@ -88,7 +89,7 @@ export function QuickProducts({ productos, onAgregar }: Props) {
                       className="flex items-baseline justify-between gap-2 rounded-lg border border-accent/40 bg-accent/10 px-2 py-1.5 transition-colors hover:bg-accent/20"
                     >
                       <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-accent/80">
-                        Bolsa {Number(p.bolsa_kg)}kg
+                        {etiquetaEnvase(p.unidad_medida, p.bolsa_kg)}
                       </span>
                       <span className="whitespace-nowrap tabular-nums text-xs font-semibold text-accent">
                         {formatMoney(p.precio_bolsa!)}

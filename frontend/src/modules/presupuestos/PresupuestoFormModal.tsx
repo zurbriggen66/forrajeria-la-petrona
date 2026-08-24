@@ -191,7 +191,7 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
                     )}
 
                     <Input
-                      aria-label="Cantidad" type="number" min="0.001" step="0.001" value={row.cantidad}
+                      aria-label="Cantidad" type="number" min="0.001" step="any" value={row.cantidad}
                       onChange={(e) => updateItem(i, { cantidad: e.target.value })}
                     />
                     <span className="text-right text-sm tabular-nums text-text-dim">

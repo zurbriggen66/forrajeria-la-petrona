@@ -71,7 +71,7 @@ export function PedidoManualFormModal({ onClose }: { onClose: () => void }) {
                   <ProductoPicker producto={row.producto} onSelect={(p) => updateRow(i, { producto: p })} />
                 </div>
                 <Input
-                  type="number" min="0.001" step="0.001" value={row.cantidad}
+                  type="number" min="0.001" step="any" value={row.cantidad}
                   onChange={(e) => updateRow(i, { cantidad: e.target.value })}
                   className="w-24" aria-label="Cantidad"
                 />

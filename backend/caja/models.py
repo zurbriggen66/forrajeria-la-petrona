@@ -42,3 +42,26 @@ class CajaMovimiento(TenantModel):
     # Comparte el mismo UUID en las dos patas (egreso + ingreso) de una transferencia
     # entre contenedores, para poder mostrarlas agrupadas en el frontend.
     transferencia_id = models.UUIDField(null=True, blank=True)
+
+
+class CajaConteo(TenantModel):
+    """Lo que se contó en un contenedor al cerrar el turno.
+
+    El arqueo se hace contenedor por contenedor y no con un total único. Con un
+    solo número, la plata que entró por transferencia (que no se puede
+    "contar": está en el banco) se sumaba al efectivo esperado, así que un
+    turno normal con ventas por transferencia cerraba con un faltante enorme y
+    un faltante real de billetes quedaba escondido adentro de ese total.
+    """
+
+    sesion = models.ForeignKey(CajaSesion, on_delete=models.CASCADE, related_name="conteos")
+    cuenta = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
+    esperado = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    contado = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = ("sesion", "cuenta")
+
+    @property
+    def diferencia(self):
+        return self.contado - self.esperado

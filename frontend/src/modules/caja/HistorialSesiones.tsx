@@ -25,7 +25,21 @@ export function HistorialSesiones() {
       render: (s) => {
         if (s.diferencia === null) return '—'
         const dif = Number(s.diferencia)
-        return <span className={dif === 0 ? 'text-accent-2' : dif > 0 ? 'text-warning' : 'text-danger'}>{formatMoney(dif)}</span>
+        // Un total descuadrado no dice qué hacer; el contenedor sí. Faltante de
+        // billetes y desfasaje del banco no se arreglan igual.
+        const culpables = s.conteos.filter((c) => Number(c.diferencia) !== 0)
+        return (
+          <div className="flex flex-col">
+            <span className={dif === 0 ? 'text-accent-2' : dif > 0 ? 'text-warning' : 'text-danger'}>
+              {formatMoney(dif)}
+            </span>
+            {culpables.length > 0 && (
+              <span className="text-[11px] text-text-dim">
+                {culpables.map((c) => `${c.cuenta_nombre} ${formatMoney(c.diferencia)}`).join(' · ')}
+              </span>
+            )}
+          </div>
+        )
       },
     },
     {

@@ -186,7 +186,11 @@ class ContenedoresYTransferenciasTests(APITestCase):
         self.assertEqual(Decimal(self._contenedor(actual.data, "Efectivo")["saldo_turno"]), Decimal("700.00"))
         self.assertEqual(Decimal(self._contenedor(actual.data, "BANCO")["saldo_turno"]), Decimal("300.00"))
 
-        cierre = self.client.post(f"/api/caja/sesiones/{sesion_id}/cerrar/", {"monto_cierre": "1000"}, format="json")
+        # Se cuenta cada contenedor por separado: en el cajón quedan 700 (los
+        # 300 se fueron al banco), y el banco se acepta como está.
+        cierre = self.client.post(f"/api/caja/sesiones/{sesion_id}/cerrar/", {
+            "conteos": [{"cuenta": efectivo_id, "contado": "700"}],
+        }, format="json")
         self.assertEqual(Decimal(cierre.data["monto_esperado"]), Decimal("1000.00"), "la transferencia no debe alterar el total esperado")
         self.assertEqual(Decimal(cierre.data["diferencia"]), Decimal("0.00"))
 
@@ -199,3 +203,107 @@ class ContenedoresYTransferenciasTests(APITestCase):
 
         actual = self.client.get("/api/caja/sesiones/actual/")
         self.assertEqual(Decimal(actual.data["retiros"]), Decimal("100.00"))
+
+
+class ArqueoPorContenedorTests(APITestCase):
+    """El arqueo se hace contenedor por contenedor.
+
+    Con un único total, la plata cobrada por transferencia se sumaba al
+    efectivo esperado: un turno normal cerraba con un faltante gigante y un
+    faltante real de billetes quedaba escondido adentro de ese número.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.efectivo = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        self.banco = CuentaPago.objects.create(comercio=self.comercio, nombre="Transferencia", tipo="transferencia")
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Alimento", precio_costo=Decimal("1"),
+            precio_venta=Decimal("1000"), stock=Decimal("1000"),
+        )
+        self.sesion_id = self.client.post(
+            "/api/caja/sesiones/abrir/", {"monto_apertura": "5000"}, format="json",
+        ).data["id"]
+
+    def _vender(self, cuenta, cantidad):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.producto.id), "cantidad": str(cantidad)}],
+            "cuenta_pago": str(cuenta.id),
+        }, format="json")
+
+    def _cerrar(self, **contados):
+        return self.client.post(f"/api/caja/sesiones/{self.sesion_id}/cerrar/", {
+            "conteos": [
+                {"cuenta": str(getattr(self, nombre).id), "contado": monto}
+                for nombre, monto in contados.items()
+            ],
+        }, format="json")
+
+    def _conteo(self, data, nombre):
+        return next(c for c in data["conteos"] if c["cuenta_nombre"] == nombre)
+
+    def test_cobrar_por_transferencia_no_genera_un_faltante_de_efectivo(self):
+        """El caso que rompía todos los días: $10.000 en efectivo y $50.000 por
+        transferencia. En el cajón hay 15.000 y el arqueo tiene que dar cero."""
+        self._vender(self.efectivo, 10)
+        self._vender(self.banco, 50)
+
+        response = self._cerrar(efectivo="15000")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Decimal(response.data["diferencia"]), Decimal("0.00"))
+        self.assertEqual(Decimal(self._conteo(response.data, "Efectivo")["diferencia"]), Decimal("0.00"))
+
+    def test_un_faltante_de_efectivo_se_atribuye_a_su_contenedor(self):
+        self._vender(self.efectivo, 10)
+        self._vender(self.banco, 50)
+
+        response = self._cerrar(efectivo="13000")
+        self.assertEqual(Decimal(response.data["diferencia"]), Decimal("-2000.00"))
+
+        efectivo = self._conteo(response.data, "Efectivo")
+        self.assertEqual(Decimal(efectivo["esperado"]), Decimal("15000.00"))
+        self.assertEqual(Decimal(efectivo["contado"]), Decimal("13000.00"))
+        self.assertEqual(Decimal(efectivo["diferencia"]), Decimal("-2000.00"))
+        # El banco no se contó: se da por bueno, no inventa un faltante.
+        self.assertEqual(Decimal(self._conteo(response.data, "Transferencia")["diferencia"]), Decimal("0.00"))
+
+    def test_un_contenedor_no_contado_se_da_por_bueno(self):
+        self._vender(self.banco, 50)
+        response = self._cerrar(efectivo="5000")
+
+        banco = self._conteo(response.data, "Transferencia")
+        self.assertEqual(Decimal(banco["esperado"]), Decimal("50000.00"))
+        self.assertEqual(Decimal(banco["contado"]), Decimal("50000.00"))
+        self.assertEqual(Decimal(response.data["diferencia"]), Decimal("0.00"))
+
+    def test_rechaza_contar_un_contenedor_de_otro_comercio(self):
+        ajena = CuentaPago.objects.create(
+            comercio=Comercio.objects.create(nombre="Otro"), nombre="Ajena", tipo="efectivo",
+        )
+        response = self.client.post(f"/api/caja/sesiones/{self.sesion_id}/cerrar/", {
+            "conteos": [{"cuenta": str(ajena.id), "contado": "100"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            CajaSesion.objects.get(pk=self.sesion_id).estado, "abierta",
+            "un cierre rechazado no puede dejar la caja cerrada",
+        )
+
+    def test_exige_el_recuento(self):
+        response = self.client.post(f"/api/caja/sesiones/{self.sesion_id}/cerrar/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_una_cuenta_desactivada_a_mitad_de_turno_sigue_entrando_al_arqueo(self):
+        """Su plata existe igual: si se cayera del arqueo, el turno cerraría
+        con un faltante por dinero que en realidad está."""
+        self._vender(self.banco, 50)
+        self.banco.activo = False
+        self.banco.save(update_fields=["activo"])
+
+        response = self._cerrar(efectivo="5000")
+        self.assertEqual(Decimal(self._conteo(response.data, "Transferencia")["esperado"]), Decimal("50000.00"))
+        self.assertEqual(Decimal(response.data["diferencia"]), Decimal("0.00"))

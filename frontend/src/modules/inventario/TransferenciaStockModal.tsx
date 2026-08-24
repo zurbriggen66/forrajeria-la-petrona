@@ -74,7 +74,7 @@ export function TransferenciaStockModal({ onClose }: { onClose: () => void }) {
         {disponible !== null && (
           <p className="text-xs text-text-dim">Disponible en el origen: <span className="font-medium text-text">{disponible}</span></p>
         )}
-        <Input id="cantidad" label="Cantidad" type="number" min="0.001" step="0.001" required value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+        <Input id="cantidad" label="Cantidad" type="number" min="0.001" step="any" required value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
         <div className="flex justify-end gap-3">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button type="submit" disabled={transferir.isPending}>

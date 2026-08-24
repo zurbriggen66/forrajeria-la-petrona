@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
 
-from .models import CajaMovimiento, CajaSesion, CuentaPago
+from .models import CajaConteo, CajaMovimiento, CajaSesion, CuentaPago
 from ventas.models import Venta
 from .serializers import (
     CajaAperturaSerializer,
@@ -35,6 +35,15 @@ class CuentaPagoViewSet(TenantViewSet):
     filterset_fields = ["activo"]
 
 
+# Los movimientos de caja de una venta se identifican por su concepto, que arma
+# ventas/views.py. Es un acoplamiento por texto: si allá cambia el formato, acá
+# hay que cambiarlo igual.
+# ponytail: alcanzaría con una FK a Venta en CajaMovimiento, pero es una tabla de
+# plata en producción — migrar eso merece su propio cambio, no ir de garrón acá.
+PREFIJO_VENTA = "Venta #"
+PREFIJO_ANULACION = "Anulación venta #"
+
+
 def obtener_sesion_abierta(comercio):
     return CajaSesion.objects.filter(comercio=comercio, estado="abierta").first()
 
@@ -50,11 +59,15 @@ def resolver_cuenta_efectivo(comercio):
     return cuenta
 
 
-def calcular_contenedores(comercio, sesion):
+def calcular_contenedores(comercio, sesion, cuenta_efectivo=None):
     """Saldo por contenedor (cuenta de pago) acumulado durante la sesión actual.
     El monto de apertura se asigna íntegro al contenedor Efectivo: la caja se
-    abre con un fondo fijo en billetes, no en cuentas bancarias."""
-    cuenta_efectivo = resolver_cuenta_efectivo(comercio)
+    abre con un fondo fijo en billetes, no en cuentas bancarias.
+
+    `cuenta_efectivo` se puede pasar ya resuelta para no repetir la consulta
+    cuando quien llama también la necesita."""
+    if cuenta_efectivo is None:
+        cuenta_efectivo = resolver_cuenta_efectivo(comercio)
     movimientos_por_cuenta = (
         CajaMovimiento.objects.filter(sesion=sesion)
         .values("cuenta")
@@ -68,8 +81,15 @@ def calcular_contenedores(comercio, sesion):
         for fila in movimientos_por_cuenta
     }
 
+    # Se listan las cuentas activas y, además, cualquiera que tenga movimientos
+    # en el turno: si se desactivó una cuenta a mitad del turno su plata sigue
+    # existiendo y tiene que entrar al arqueo igual.
+    cuentas = CuentaPago.objects.filter(comercio=comercio).filter(
+        Q(activo=True) | Q(id__in=[c for c in saldos if c])
+    ).order_by("nombre")
+
     contenedores = []
-    for cuenta in CuentaPago.objects.filter(comercio=comercio, activo=True).order_by("nombre"):
+    for cuenta in cuentas:
         apertura = sesion.monto_apertura if cuenta.id == cuenta_efectivo.id else Decimal("0")
         contenedores.append({
             "cuenta": cuenta.id,
@@ -84,7 +104,11 @@ class CajaSesionViewSet(TenantViewSet):
     """Apertura, cierre y arqueo de caja (Fase 3). Una caja lógica por comercio:
     no puede haber dos sesiones abiertas a la vez (constraint en el modelo)."""
 
-    queryset = CajaSesion.objects.all().order_by("-fecha_apertura")
+    queryset = (
+        CajaSesion.objects.select_related("cajero")
+        .prefetch_related("conteos__cuenta")
+        .order_by("-fecha_apertura")
+    )
     serializer_class = CajaSesionSerializer
     http_method_names = ["get", "post", "head", "options"]
 
@@ -110,23 +134,33 @@ class CajaSesionViewSet(TenantViewSet):
         # se vendió" ni "cuánto se retiró" en el turno, así que ambos KPIs los
         # excluyen — el saldo del contenedor (calcular_contenedores) no se toca,
         # ahí sí importa que sigan sumando/restando para cerrar en el número correcto.
-        conceptos_anulados = [
-            f"Venta #{t}" for t in Venta.objects.filter(comercio=comercio, anulada=True)
-            .values_list("numero_ticket", flat=True)
-        ]
+        #
+        # Las anulaciones se leen de los movimientos de ESTA sesión y no de todas
+        # las ventas anuladas del comercio. Antes se traían los tickets anulados
+        # de toda la historia en cada request (y este endpoint lo consulta la
+        # barra de estado cada 30 s), así que el costo crecía para siempre.
+        # Además es más correcto: una venta de este turno anulada la semana que
+        # viene no debe reescribir hacia atrás lo que este turno facturó — su
+        # egreso compensatorio cae en el turno en que se anuló.
+        anulaciones = CajaMovimiento.objects.filter(
+            sesion=sesion, concepto__startswith=PREFIJO_ANULACION,
+        ).values_list("concepto", flat=True)
+        conceptos_anulados = [c.replace(PREFIJO_ANULACION, PREFIJO_VENTA, 1) for c in anulaciones]
         ventas_efectivo = CajaMovimiento.objects.filter(
             sesion=sesion, tipo="ingreso", cuenta=cuenta_efectivo,
         ).exclude(concepto__in=conceptos_anulados).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         retiros = CajaMovimiento.objects.filter(
             sesion=sesion, tipo="egreso", cuenta=cuenta_efectivo, transferencia_id__isnull=True,
         ).exclude(
-            concepto__startswith="Anulación venta #",
+            concepto__startswith=PREFIJO_ANULACION,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
 
         data = CajaSesionSerializer(sesion).data
         data["ventas_efectivo"] = ventas_efectivo
         data["retiros"] = retiros
-        data["contenedores"] = CajaContenedorSerializer(calcular_contenedores(comercio, sesion), many=True).data
+        data["contenedores"] = CajaContenedorSerializer(
+            calcular_contenedores(comercio, sesion, cuenta_efectivo), many=True,
+        ).data
         return Response(data)
 
     @action(detail=False, methods=["post"])
@@ -163,19 +197,48 @@ class CajaSesionViewSet(TenantViewSet):
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            movimientos = CajaMovimiento.objects.filter(sesion=sesion).aggregate(
-                ingresos=Sum("monto", filter=Q(tipo="ingreso")),
-                egresos=Sum("monto", filter=Q(tipo="egreso")),
-            )
-            ingresos = movimientos["ingresos"] or Decimal("0")
-            egresos = movimientos["egresos"] or Decimal("0")
-            monto_esperado = sesion.monto_apertura + ingresos - egresos
-            monto_cierre = serializer.validated_data["monto_cierre"]
+            # Bloqueada mientras se arquea: dos cierres simultáneos calcularían
+            # los dos sobre los mismos movimientos y el último pisaría al otro.
+            sesion = CajaSesion.objects.select_for_update().get(pk=sesion.pk)
+            if sesion.estado != "abierta":
+                raise ValidationError("La caja ya está cerrada.")
+
+            cuenta_efectivo = resolver_cuenta_efectivo(comercio)
+            esperado_por_cuenta = {
+                c["cuenta"]: c["saldo_turno"]
+                for c in calcular_contenedores(comercio, sesion, cuenta_efectivo)
+            }
+
+            conteos = serializer.validated_data.get("conteos")
+            if not conteos:
+                # Cliente viejo: mandó un solo número. Es el efectivo, que es lo
+                # único que se cuenta a mano.
+                conteos = [{
+                    "cuenta": cuenta_efectivo.id,
+                    "contado": serializer.validated_data["monto_cierre"],
+                }]
+
+            contado_por_cuenta = {c["cuenta"]: c["contado"] for c in conteos}
+            ajenas = set(contado_por_cuenta) - set(esperado_por_cuenta)
+            if ajenas:
+                raise ValidationError({"conteos": "Hay contenedores que no son de este comercio."})
+
+            filas = [
+                CajaConteo(
+                    comercio=comercio, sesion=sesion, cuenta_id=cuenta_id, esperado=esperado,
+                    # Un contenedor que no se contó se da por bueno: la plata que
+                    # entró por transferencia está en el banco, no hay nada que
+                    # contar y forzar un 0 inventaría un faltante.
+                    contado=contado_por_cuenta.get(cuenta_id, esperado),
+                )
+                for cuenta_id, esperado in esperado_por_cuenta.items()
+            ]
+            CajaConteo.objects.bulk_create(filas)
 
             sesion.estado = "cerrada"
-            sesion.monto_cierre = monto_cierre
-            sesion.monto_esperado = monto_esperado
-            sesion.diferencia = monto_cierre - monto_esperado
+            sesion.monto_esperado = sum((f.esperado for f in filas), Decimal("0"))
+            sesion.monto_cierre = sum((f.contado for f in filas), Decimal("0"))
+            sesion.diferencia = sesion.monto_cierre - sesion.monto_esperado
             sesion.fecha_cierre = timezone.now()
             sesion.save(update_fields=[
                 "estado", "monto_cierre", "monto_esperado", "diferencia", "fecha_cierre", "updated_at",
@@ -188,7 +251,9 @@ class CajaMovimientoViewSet(TenantViewSet):
     """Ingresos/egresos/transferencias de la caja abierta (las ventas y los
     gastos generan sus propios movimientos automáticamente)."""
 
-    queryset = CajaMovimiento.objects.all().order_by("-created_at")
+    # select_related: el serializer expone cuenta_nombre, así que sin esto el
+    # listado hacía una consulta por cada movimiento.
+    queryset = CajaMovimiento.objects.select_related("cuenta").order_by("-created_at")
     filterset_fields = ["sesion", "tipo", "cuenta"]
     http_method_names = ["get", "post", "head", "options"]
 

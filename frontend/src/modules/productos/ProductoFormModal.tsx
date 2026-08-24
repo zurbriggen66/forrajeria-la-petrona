@@ -73,12 +73,22 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
     return String(Math.round(((Number(kgValue) || 0) / bolsaKg) * 100) / 100)
   }
 
+  /** Recorta a los decimales que admite el campo en el backend.
+   *
+   * Convertir entre envase y unidad suelta divide, y dividir en JS da
+   * periódicos: 36.874 el costo de una bolsa de 15 kg son 2458.266666666667
+   * por kg — 16 dígitos, y el serializer acepta 14, así que rechazaba el
+   * guardado entero con "no haya más de 14 dígitos en total". */
+  function aDecimal(valor: number, decimales: number): string {
+    return valor.toFixed(decimales)
+  }
+
   function cambiarStock(key: 'stock' | 'stock_minimo', valorMostrado: string) {
     if (!stockEnBolsas) {
       set(key, valorMostrado)
       return
     }
-    set(key, String((Number(valorMostrado) || 0) * bolsaKg))
+    set(key, aDecimal((Number(valorMostrado) || 0) * bolsaKg, 3))
   }
 
   // precio_costo se guarda siempre "por kg" (así el margen se compara contra
@@ -95,7 +105,7 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
       set('precio_costo', valorMostrado)
       return
     }
-    set('precio_costo', String((Number(valorMostrado) || 0) / bolsaKg))
+    set('precio_costo', aDecimal((Number(valorMostrado) || 0) / bolsaKg, 4))
   }
 
   async function handleCodigoBarrasBlur() {

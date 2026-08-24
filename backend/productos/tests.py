@@ -235,3 +235,54 @@ class EliminarProductoTests(APITestCase):
         producto.refresh_from_db()
         self.assertFalse(producto.activo)
         self.assertEqual(combo.items.count(), 1)
+
+
+class CostoPorEnvaseCerradoTests(APITestCase):
+    """Cargar el costo de la bolsa entera no puede romper el guardado.
+
+    El costo se guarda por unidad suelta, así que cargarlo por envase divide:
+    una bolsa de 15 kg a $36.874 son $2.458,2667/kg. Esa división da periódico
+    y el formulario mandaba el float crudo (2458.266666666667, 16 dígitos), que
+    el serializer rechazaba entero por max_digits=14 — el dueño no podía
+    guardar el producto y el error no decía qué campo era.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+    def _crear(self, precio_costo):
+        return self.client.post("/api/productos/", {
+            "nombre": "Bolsa Estampa Razas Chicas X15kg",
+            "codigo_barras": "0369",
+            "precio_costo": precio_costo,
+            "precio_venta": "3700",
+            "stock": "135",
+            "venta_por_peso": True,
+            "unidad_medida": "kg",
+            "bolsa_kg": "15",
+            "precio_bolsa": "49100",
+            "stock_en_bolsas": True,
+        }, format="json")
+
+    def test_acepta_el_costo_por_kg_de_una_bolsa_que_no_divide_exacto(self):
+        # 36874 / 15, ya redondeado por el formulario a los decimales del campo.
+        response = self._crear("2458.2667")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        producto = Producto.objects.get(id=response.data["id"])
+        self.assertEqual(producto.precio_costo, Decimal("2458.2667"))
+
+        # Y al reabrir la ficha el costo de la bolsa tiene que volver a leerse
+        # como los $36.874 que el dueño tipeó, no $36.874,05.
+        costo_bolsa = producto.precio_costo * producto.bolsa_kg
+        self.assertEqual(round(costo_bolsa, 2), Decimal("36874.00"))
+
+    def test_rechaza_el_float_crudo_sin_redondear(self):
+        """Fija el síntoma original: si el formulario vuelve a mandar el
+        periódico entero, esto se pone en rojo."""
+        response = self._crear("2458.266666666667")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("precio_costo", response.data)

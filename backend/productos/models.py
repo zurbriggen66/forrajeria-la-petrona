@@ -41,7 +41,12 @@ class Producto(TenantModel):
     categoria = models.CharField(max_length=120, blank=True)
     subcategoria = models.CharField(max_length=120, blank=True)
     proveedor = models.ForeignKey("proveedores.Proveedor", on_delete=models.SET_NULL, null=True, blank=True)
-    precio_costo = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # 4 decimales y no 2: cuando el producto se carga por envase cerrado, el
+    # costo se guarda por unidad suelta dividiendo (una bolsa de 15 kg a
+    # $36.874 son $2.458,2667/kg). Con 2 decimales esa división se redondeaba a
+    # $2.458,27 y al reabrir la ficha el costo de la bolsa aparecía como
+    # $36.874,05 — el dueño veía cambiar un número que él mismo había cargado.
+    precio_costo = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     precio_venta = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     alicuota_iva = models.DecimalField(max_digits=5, decimal_places=2, default=21)  # 21 / 10.5 / 0
     # stock

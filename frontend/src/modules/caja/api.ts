@@ -4,6 +4,7 @@ import type {
   CajaMovimiento,
   CajaSesion,
   CajaSesionActual,
+  ConteoInput,
   CuentaPago,
   MovimientoInput,
   Paginated,
@@ -50,8 +51,8 @@ export function useAbrirCaja() {
 export function useCerrarCaja() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, monto_cierre }: { id: string; monto_cierre: string }) => {
-      const { data } = await api.post<CajaSesion>(`/caja/sesiones/${id}/cerrar/`, { monto_cierre })
+    mutationFn: async ({ id, conteos }: { id: string; conteos: ConteoInput[] }) => {
+      const { data } = await api.post<CajaSesion>(`/caja/sesiones/${id}/cerrar/`, { conteos })
       return data
     },
     onSuccess: () => {

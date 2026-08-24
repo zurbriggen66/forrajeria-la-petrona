@@ -20,6 +20,23 @@ export interface Contenedor {
   saldo_turno: string
 }
 
+/** Lo que se contó en un contenedor al cerrar. Un contenedor que no se manda
+ * se da por bueno: la plata que entró por transferencia está en el banco y no
+ * hay nada que contar a mano. */
+export interface ConteoInput {
+  cuenta: string
+  contado: string
+}
+
+export interface Conteo {
+  cuenta: string
+  cuenta_nombre: string | null
+  tipo: string
+  esperado: string
+  contado: string
+  diferencia: string
+}
+
 export interface CajaSesion {
   id: string
   cajero: string | null
@@ -31,6 +48,7 @@ export interface CajaSesion {
   diferencia: string | null
   fecha_apertura: string
   fecha_cierre: string | null
+  conteos: Conteo[]
 }
 
 export interface CajaSesionActual extends CajaSesion {

@@ -55,7 +55,9 @@ export function useProductoSearch(query: string) {
       })
       return data.results
     },
-    enabled: query.trim().length >= 2,
+    // Con una letra alcanza: en un catálogo de miles, "b" ya descarta casi
+    // todo, y obligar a dos hacía que el primer caracter pareciera no hacer nada.
+    enabled: query.trim().length >= 1,
   })
 }
 

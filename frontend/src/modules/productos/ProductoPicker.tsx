@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Loader2, Search, X } from 'lucide-react'
+import { formatMoney } from '../../lib/format'
 import { useProductoSearch } from './api'
+import { formatCantidadStock } from './stock'
 import type { Producto } from './types'
 
 interface Props {
@@ -17,6 +19,7 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [abierto, setAbierto] = useState(false)
+  const [marcado, setMarcado] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -34,6 +37,12 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
+  // Vuelve al primero cada vez que cambian los resultados: si no, la marca
+  // podía quedar apuntando a un índice que ya no existe.
+  // Va acá arriba, antes de cualquier return: un hook salteado en un render
+  // rompe el orden y React tira "rendered fewer hooks than expected".
+  useEffect(() => setMarcado(0), [resultados])
+
   if (producto) {
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
@@ -48,7 +57,41 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
     )
   }
 
-  const mostrarDropdown = abierto && debounced.trim().length >= 2
+  const lista = resultados ?? []
+
+  function elegir(p: Producto) {
+    onSelect(p)
+    setQuery('')
+    setDebounced('')
+    setAbierto(false)
+  }
+
+  /** Teclado, para no tener que soltar el teclado y agarrar el mouse en cada
+   * renglón de un pedido largo. Enter con un código de barras exacto elige ese
+   * producto aunque no sea el marcado: el lector tipea y manda Enter solo. */
+  function alTeclear(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Escape') {
+      setAbierto(false)
+      return
+    }
+    if (e.key === 'ArrowDown' && lista.length) {
+      e.preventDefault()
+      setMarcado((i) => (i + 1) % lista.length)
+      return
+    }
+    if (e.key === 'ArrowUp' && lista.length) {
+      e.preventDefault()
+      setMarcado((i) => (i - 1 + lista.length) % lista.length)
+      return
+    }
+    if (e.key !== 'Enter' || !lista.length) return
+    // preventDefault: sin esto el Enter manda el formulario del pedido entero.
+    e.preventDefault()
+    const exacto = lista.find((p) => p.codigo_barras === query.trim())
+    elegir(exacto ?? lista[marcado] ?? lista[0])
+  }
+
+  const mostrarDropdown = abierto && debounced.trim().length >= 1
 
   return (
     <div ref={boxRef} className="relative">
@@ -59,6 +102,7 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
           value={query}
           onChange={(e) => { setQuery(e.target.value); setAbierto(true) }}
           onFocus={() => setAbierto(true)}
+          onKeyDown={alTeclear}
           placeholder={placeholder}
           className="w-full rounded-lg border border-border bg-surface-2 py-2 pl-8 pr-3 text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
@@ -73,14 +117,26 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
           ) : (resultados ?? []).length === 0 ? (
             <div className="px-3 py-2.5 text-xs text-text-dim">Sin resultados para "{debounced}".</div>
           ) : (
-            resultados!.map((p) => (
+            lista.map((p, i) => (
               <button
                 key={p.id} type="button"
-                onClick={() => { onSelect(p); setQuery(''); setDebounced(''); setAbierto(false) }}
-                className="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-2"
+                onClick={() => elegir(p)}
+                onMouseEnter={() => setMarcado(i)}
+                className={`flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left last:border-0 ${
+                  i === marcado ? 'bg-surface-2' : ''
+                }`}
               >
-                <div className="text-sm text-text">{p.nombre}</div>
-                <div className="text-xs text-text-dim">{p.codigo_barras || 'sin código'} · stock {p.stock}</div>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-text">{p.nombre}</span>
+                  <span className="block text-xs text-text-dim">
+                    {p.codigo_barras || 'sin código'} · stock {formatCantidadStock(p.stock, p)}
+                  </span>
+                </span>
+                {/* El precio importa tanto como el nombre cuando se arma un
+                    pedido: evita tener que abrir el producto para verlo. */}
+                <span className="shrink-0 tabular-nums text-sm text-accent-2">
+                  {formatMoney(p.precio_venta)}
+                </span>
               </button>
             ))
           )}

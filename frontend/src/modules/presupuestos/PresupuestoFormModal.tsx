@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Loader2, Package, Plus, Trash2, UserRound } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
@@ -216,9 +217,9 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
             id="validez" label="Válido hasta (opcional)" type="date"
             value={validez} onChange={(e) => setValidez(e.target.value)}
           />
-          <Input
-            id="descuento" label="Descuento" type="number" min="0" step="0.01"
-            value={descuento} onChange={(e) => setDescuento(e.target.value)}
+          <MontoOPorcentaje
+            id="descuento" label="Descuento" base={subtotal}
+            value={descuento} onChange={setDescuento}
           />
         </section>
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, List, Loader2, Plus, UserRound, Wallet, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Select } from '../../components/ui/Select'
 import { formatMoney } from '../../lib/format'
 import { useClientesSearch, useCuentasPago } from './api'
@@ -272,8 +273,8 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
 
       <div className="mt-auto flex flex-col gap-3 border-t border-border pt-4">
         <div className="grid grid-cols-2 gap-3">
-          <Input id="descuento" label="Descuento $" type="number" min="0" step="0.01" value={descuento} onChange={(e) => setDescuento(e.target.value)} />
-          <Input id="recargo" label="Recargo $" type="number" min="0" step="0.01" value={recargoMonto} onChange={(e) => setRecargoMonto(e.target.value)} />
+          <MontoOPorcentaje id="descuento" label="Descuento" base={subtotal} value={descuento} onChange={setDescuento} />
+          <MontoOPorcentaje id="recargo" label="Recargo" base={subtotal} value={recargoMonto} onChange={setRecargoMonto} />
         </div>
 
         <div className="flex flex-col gap-1">

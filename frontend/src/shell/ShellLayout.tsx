@@ -5,7 +5,7 @@ import { Statusbar } from './Statusbar'
 
 export function ShellLayout() {
   return (
-    <div className="flex h-svh bg-bg">
+    <div className="fondo-tecnico flex h-svh bg-bg">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar />

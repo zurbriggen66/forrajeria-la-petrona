@@ -42,7 +42,7 @@ export function Table<T>({ columns, rows, rowKey, emptyMessage = 'Sin resultados
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={`border-b border-border last:border-0 hover:bg-surface-2 ${onRowClick ? 'cursor-pointer' : ''}`}
+                className={`border-b border-border last:border-0 transition-colors hover:bg-surface-2 ${onRowClick ? 'cursor-pointer' : ''}`}
               >
                 {columns.map((col) => (
                   <td key={col.header} className={`px-4 py-3 text-text ${col.className ?? ''}`}>

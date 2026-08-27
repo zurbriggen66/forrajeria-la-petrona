@@ -43,3 +43,29 @@ export function useAnularVenta() {
     },
   })
 }
+
+export interface VentaItemEditInput {
+  producto: string
+  cantidad: string
+  es_bolsa?: boolean
+  descuento_pct?: string
+}
+
+/** Corrige los productos de una venta fiada ya cobrada (ver
+ * VentaViewSet.editar_items en el backend): la diferencia le pega a la
+ * cuenta corriente del cliente, no a la caja del día. */
+export function useEditarItemsVenta() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, items }: { id: string; items: VentaItemEditInput[] }) => {
+      const { data } = await api.post<Venta>(`/ventas/${id}/editar_items/`, { items })
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ventas'] })
+      queryClient.invalidateQueries({ queryKey: ['estadisticas'] })
+      queryClient.invalidateQueries({ queryKey: ['cliente-movimientos'] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+    },
+  })
+}

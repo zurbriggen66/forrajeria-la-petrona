@@ -12,6 +12,17 @@ export interface VentaItem {
   combo: string | null
   cantidad: string
   peso_kg: string | null
+  // Precio ACTUAL del producto (no el precio_unitario congelado en esta
+  // línea), para poder reabrir la venta en el editor de ítems. Ver
+  // VentaItemSerializer en el backend.
+  unidad_medida: string | null
+  bolsa_kg: string | null
+  venta_por_peso: boolean
+  precio_venta: string | null
+  precio_bolsa: string | null
+  precio_oferta: string | null
+  oferta_activa: boolean
+  descuento_pct: string
   precio_unitario: string
   costo_unitario: string
   subtotal: string
@@ -50,6 +61,7 @@ export interface Venta {
   anulada: boolean
   motivo_anulacion: string
   fecha_anulacion: string | null
+  facturado: boolean
   created_at: string
   items: VentaItem[]
   pagos: VentaPago[]

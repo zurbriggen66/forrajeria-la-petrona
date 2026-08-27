@@ -23,6 +23,7 @@ export interface VentaImprimible {
     producto_nombre: string | null
     cantidad: string
     peso_kg: string | null
+    descuento_pct: string
     precio_unitario: string
     subtotal: string
   }[]
@@ -88,7 +89,14 @@ export function Remito({ venta }: { venta: VentaImprimible }) {
           {venta.items.map((item) => (
             <tr key={item.id}>
               <td className="hoja-num">{cantidadItem(item)}</td>
-              <td>{item.producto_nombre ?? 'Producto'}</td>
+              <td>
+                {item.producto_nombre ?? 'Producto'}
+                {/* El descuento pactado se aclara en la línea: el cliente
+                    negoció ese precio y tiene que verlo en el papel. */}
+                {Number(item.descuento_pct) > 0 && (
+                  <span className="hoja-datos"> — {Number(item.descuento_pct)}% de descuento</span>
+                )}
+              </td>
               <td className="hoja-num">{formatMoney(item.precio_unitario)}</td>
               <td className="hoja-num">{formatMoney(item.subtotal)}</td>
             </tr>

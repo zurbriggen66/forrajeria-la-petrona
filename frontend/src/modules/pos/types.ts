@@ -2,6 +2,8 @@ export interface VentaItemInput {
   producto: string
   cantidad: string
   es_bolsa?: boolean
+  /** Descuento sobre este producto (0–100). El de la venta entera va aparte. */
+  descuento_pct?: string
 }
 
 export interface VentaPagoInput {
@@ -36,6 +38,7 @@ export interface VentaItemResult {
   combo: string | null
   cantidad: string
   peso_kg: string | null
+  descuento_pct: string
   precio_unitario: string
   costo_unitario: string
   subtotal: string
@@ -110,9 +113,12 @@ export interface CartItem {
     venta_por_peso: boolean
     unidad_medida: string
     stock: string
+    stock_en_bolsas: boolean
     precio_bolsa: string | null
     bolsa_kg: string | null
   }
   cantidad: string
   esBolsa: boolean
+  /** Descuento sobre esta línea, en % (0–100). '' o '0' = sin descuento. */
+  descuentoPct: string
 }

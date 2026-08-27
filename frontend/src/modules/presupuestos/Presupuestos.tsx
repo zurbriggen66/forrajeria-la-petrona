@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  Check, Clock, FileText, Loader2, Package, Pencil, Plus, Search, Trash2, UserRound, X,
+  Check, Clock, FileText, Loader2, Package, Pencil, Plus, Printer, Search, Trash2, UserRound, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
@@ -8,6 +8,8 @@ import { KpiCard } from '../../components/ui/KpiCard'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatFechaSola, formatMoney } from '../../lib/format'
+import { imprimir } from '../../lib/imprimir'
+import { HojaPresupuesto } from './HojaPresupuesto'
 import { PresupuestoFormModal } from './PresupuestoFormModal'
 import { useCambiarEstadoPresupuesto, useDeletePresupuesto, usePresupuestos } from './api'
 import { ESTADOS, type EstadoPresupuesto, type Presupuesto, type PresupuestoFiltros } from './types'
@@ -27,10 +29,11 @@ const LABEL_ESTADO: Record<EstadoPresupuesto, string> = {
 }
 
 function TarjetaPresupuesto({
-  presupuesto, onEditar, onCambiarEstado, onEliminar,
+  presupuesto, onEditar, onImprimir, onCambiarEstado, onEliminar,
 }: {
   presupuesto: Presupuesto
   onEditar: () => void
+  onImprimir: () => void
   onCambiarEstado: (estado: EstadoPresupuesto) => void
   onEliminar: () => void
 }) {
@@ -102,6 +105,9 @@ function TarjetaPresupuesto({
           </>
         )}
         <div className="ml-auto flex items-center gap-1">
+          <button onClick={onImprimir} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir presupuesto de ${presupuesto.cliente_nombre}`}>
+            <Printer size={14} />
+          </button>
           <button onClick={onEditar} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar presupuesto de ${presupuesto.cliente_nombre}`}>
             <Pencil size={14} />
           </button>
@@ -119,6 +125,21 @@ export function Presupuestos() {
   const [filtros, setFiltros] = useState<PresupuestoFiltros>({})
   const [busqueda, setBusqueda] = useState('')
   const [modal, setModal] = useState<'nuevo' | Presupuesto | null>(null)
+  // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
+  // .hoja-impresion, así que tener varias montadas saldría todo junto.
+  const [aImprimir, setAImprimir] = useState<Presupuesto | null>(null)
+
+  useEffect(() => {
+    if (!aImprimir) return
+    // Un frame de espera: print() bloquea, y llamado en el mismo ciclo la hoja
+    // todavía no está pintada. Al terminar se desmonta, para que volver a
+    // imprimir lo mismo dispare el efecto de nuevo.
+    const id = requestAnimationFrame(() => {
+      imprimir()
+      setAImprimir(null)
+    })
+    return () => cancelAnimationFrame(id)
+  }, [aImprimir])
 
   const { data: presupuestos, isLoading } = usePresupuestos({ ...filtros, search: busqueda || undefined })
   const cambiarEstado = useCambiarEstadoPresupuesto()
@@ -208,6 +229,7 @@ export function Presupuestos() {
               key={p.id}
               presupuesto={p}
               onEditar={() => setModal(p)}
+              onImprimir={() => setAImprimir(p)}
               onCambiarEstado={(estado) => handleCambiarEstado(p, estado)}
               onEliminar={() => handleEliminar(p)}
             />
@@ -219,6 +241,8 @@ export function Presupuestos() {
         Los presupuestos no descuentan stock ni entran a la caja: son una cotización. La venta se
         registra en el POS cuando el cliente acepta.
       </p>
+
+      {aImprimir && <HojaPresupuesto presupuesto={aImprimir} />}
 
       {modal && (
         <PresupuestoFormModal

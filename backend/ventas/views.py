@@ -21,7 +21,12 @@ from productos.models import Producto
 from productos.precios import resolver_precio_item
 
 from .models import Venta, VentaItem, VentaPago
-from .serializers import VentaAnularSerializer, VentaCreateSerializer, VentaSerializer
+from .serializers import (
+    VentaAnularSerializer,
+    VentaCreateSerializer,
+    VentaEditarItemsSerializer,
+    VentaSerializer,
+)
 
 
 class VentaViewSet(TenantViewSet):
@@ -173,6 +178,123 @@ class VentaViewSet(TenantViewSet):
         return Response(VentaSerializer(venta).data)
 
     @action(detail=True, methods=["post"])
+    def editar_items(self, request, pk=None):
+        """Corrige los productos de una venta fiada YA cobrada: para cuando el
+        dueño se olvidó de cargar algo, o el cliente se llevó de más/de menos.
+
+        Sólo se toca lo que se fía: la plata que ya entró a la caja ese día
+        (efectivo/tarjeta/transferencia, los VentaPago) no se retoca — la
+        diferencia entre el total viejo y el nuevo se suma o resta de la
+        cuenta corriente del cliente. Por eso sólo aplica a ventas con saldo
+        en cuenta corriente: si se cobró todo en el momento no hay deuda que
+        absorba la corrección (para eso está anular + recargar)."""
+        comercio = resolver_comercio_activo(request)
+        venta = Venta.objects.filter(comercio=comercio, pk=pk).select_related("cliente").prefetch_related(
+            "items"
+        ).first()
+        if venta is None:
+            raise ValidationError("La venta no existe.")
+        if venta.anulada:
+            raise ValidationError("No se puede editar una venta anulada.")
+        if venta.facturado:
+            raise ValidationError("No se puede editar una venta ya facturada.")
+        if not venta.cliente_id or venta.monto_cuenta_corriente <= 0:
+            raise ValidationError(
+                "Sólo se pueden corregir ventas fiadas (con saldo en cuenta corriente)."
+            )
+
+        serializer = VentaEditarItemsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        with transaction.atomic():
+            cliente = Cliente.objects.select_for_update().get(pk=venta.cliente_id)
+
+            items_viejos = list(venta.items.all())
+            producto_ids = {item["producto"] for item in data["items"]} | {
+                item.producto_id for item in items_viejos if item.producto_id
+            }
+            productos = {
+                p.id: p
+                for p in Producto.objects.select_for_update().filter(comercio=comercio, id__in=producto_ids)
+            }
+
+            # 1. Devolver al stock lo que esta venta había descontado. Mismo
+            # criterio que anular(): peso_kg si es venta por peso, si no
+            # cantidad tal cual.
+            for item_viejo in items_viejos:
+                producto = productos.get(item_viejo.producto_id)
+                if producto is None:
+                    continue
+                cantidad_a_restaurar = item_viejo.peso_kg if item_viejo.peso_kg is not None else item_viejo.cantidad
+                producto.stock = producto.stock + cantidad_a_restaurar
+
+            # 2. Armar los ítems nuevos, descontando stock de nuevo a los
+            # precios vigentes — mismo cálculo que _crear_venta.
+            items_a_crear = []
+            total = Decimal("0")
+            for item in data["items"]:
+                producto = productos.get(item["producto"])
+                if producto is None:
+                    raise ValidationError({"items": f"Producto {item['producto']} no existe en este comercio."})
+
+                cantidad = item["cantidad"]
+                precio_unitario, costo_unitario, kg_reales = resolver_precio_item(
+                    producto, cantidad, item.get("es_bolsa")
+                )
+
+                if not comercio.permitir_venta_sin_stock and producto.stock < kg_reales:
+                    raise ValidationError({
+                        "items": f'No hay stock suficiente de "{producto.nombre}" (disponible: {producto.stock}).'
+                    })
+
+                descuento_pct = item["descuento_pct"]
+                bruto = precio_unitario * cantidad
+                subtotal = (bruto * (Decimal("100") - descuento_pct) / Decimal("100")).quantize(Decimal("0.01"))
+                total += subtotal
+
+                items_a_crear.append(VentaItem(
+                    venta=venta,
+                    producto=producto,
+                    cantidad=cantidad,
+                    peso_kg=kg_reales if producto.venta_por_peso else None,
+                    descuento_pct=descuento_pct,
+                    precio_unitario=precio_unitario,
+                    costo_unitario=costo_unitario,
+                    subtotal=subtotal,
+                ))
+
+                producto.stock = producto.stock - kg_reales
+
+            Producto.objects.bulk_update(productos.values(), ["stock"])
+            venta.items.all().delete()
+            VentaItem.objects.bulk_create(items_a_crear)
+
+            total = max(total - venta.descuento + venta.recargo_monto, Decimal("0"))
+            delta_total = total - venta.total
+            monto_cuenta_corriente = venta.monto_cuenta_corriente + delta_total
+            if monto_cuenta_corriente < 0:
+                raise ValidationError({
+                    "items": "Esta corrección dejaría la cuenta corriente en negativo: no se puede "
+                    "quitar más de lo que quedó fiado en esta venta."
+                })
+
+            venta.total = total
+            venta.monto_cuenta_corriente = monto_cuenta_corriente
+            venta.save(update_fields=["total", "monto_cuenta_corriente", "updated_at"])
+
+            if delta_total != 0:
+                referencia = f"Corrección venta #{venta.numero_ticket}"
+                tipo = "cargo" if delta_total > 0 else "ajuste"
+                ClienteMovimiento.objects.create(
+                    comercio=comercio, cliente=cliente, tipo=tipo, monto=delta_total, referencia=referencia,
+                )
+                aplicar_movimiento_cliente(cliente, tipo, delta_total, referencia)
+
+        venta.refresh_from_db()
+        return Response(VentaSerializer(venta).data)
+
+    @action(detail=True, methods=["post"])
     def facturar(self, request, pk=None):
         """Pide el CAE a ARCA para esta venta (Fase 7). Deliberadamente separado
         de la creación de la venta: es una llamada de red a un tercero, no puede
@@ -318,13 +440,19 @@ class VentaViewSet(TenantViewSet):
                         "items": f'No hay stock suficiente de "{producto.nombre}" (disponible: {producto.stock}).'
                     })
 
-                subtotal = (precio_unitario * cantidad).quantize(Decimal("0.01"))
+                # Descuento pactado sobre este producto. Se aplica al subtotal
+                # y no a `precio_unitario`, que queda como precio de lista para
+                # que el remito pueda mostrar de cuánto fue la rebaja.
+                descuento_pct = item["descuento_pct"]
+                bruto = precio_unitario * cantidad
+                subtotal = (bruto * (Decimal("100") - descuento_pct) / Decimal("100")).quantize(Decimal("0.01"))
                 total += subtotal
 
                 items_a_crear.append(VentaItem(
                     producto=producto,
                     cantidad=cantidad,
                     peso_kg=kg_reales if producto.venta_por_peso else None,
+                    descuento_pct=descuento_pct,
                     precio_unitario=precio_unitario,
                     costo_unitario=costo_unitario,
                     subtotal=subtotal,
@@ -343,12 +471,11 @@ class VentaViewSet(TenantViewSet):
                     raise ValidationError({"cliente": "Elegí un cliente para cargar la venta a su cuenta corriente."})
                 if monto_cuenta_corriente > total:
                     raise ValidationError({"monto_cuenta_corriente": "No puede ser mayor al total de la venta."})
-                saldo_resultante = cliente_obj.saldo_actual + monto_cuenta_corriente
-                if saldo_resultante > cliente_obj.limite_credito:
-                    disponible = cliente_obj.limite_credito - cliente_obj.saldo_actual
-                    raise ValidationError({
-                        "monto_cuenta_corriente": f"Supera el límite de crédito del cliente (disponible: {disponible})."
-                    })
+                # El límite de crédito es orientativo, no un bloqueo: el dueño
+                # del comercio decide caso por caso si le sigue fiando a un
+                # cliente que ya lo superó. El POS lo muestra en rojo (ver
+                # PaymentPanel) para que decida con el dato a la vista, pero
+                # nunca rechaza el cobro por esto.
 
             # Reparto del cobro entre medios de pago. `monto_caja` es lo que
             # realmente entra hoy: el total menos lo que se fía.

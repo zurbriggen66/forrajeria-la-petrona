@@ -6,7 +6,11 @@ import { formatCantidadStock } from './stock'
 import type { Producto } from './types'
 
 interface Props {
-  producto: Producto | null
+  // Sólo necesita el nombre para el chip de "ya elegido": acepta cualquier
+  // objeto que lo tenga, no sólo un Producto completo de la búsqueda — así
+  // sirve también para reabrir un ítem ya guardado que no trae el Producto
+  // entero (ver PresupuestoFormModal en modo edición).
+  producto: Pick<Producto, 'nombre'> | null
   onSelect: (producto: Producto | null) => void
   placeholder?: string
   autoFocus?: boolean

@@ -45,11 +45,28 @@ class PresupuestoItemSerializer(serializers.ModelSerializer):
     bolsa_kg = serializers.DecimalField(
         source="producto.bolsa_kg", max_digits=14, decimal_places=3, read_only=True, default=None
     )
+    # Precio ACTUAL del producto (no el congelado en precio_unitario/subtotal):
+    # el frontend los necesita para reabrir el presupuesto en el editor de
+    # ítems y recalcular el mismo precio que va a cobrar el servidor al
+    # guardar — que siempre reprecia todo contra el Producto vigente, nunca
+    # confía en lo guardado (ver PresupuestoViewSet._guardar).
+    venta_por_peso = serializers.BooleanField(source="producto.venta_por_peso", read_only=True, default=False)
+    precio_venta = serializers.DecimalField(
+        source="producto.precio_venta", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    precio_bolsa = serializers.DecimalField(
+        source="producto.precio_bolsa", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    precio_oferta = serializers.DecimalField(
+        source="producto.precio_oferta", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    oferta_activa = serializers.BooleanField(source="producto.oferta_activa", read_only=True, default=False)
 
     class Meta:
         model = PresupuestoItem
         fields = [
             "id", "producto", "producto_nombre", "unidad_medida", "bolsa_kg",
+            "venta_por_peso", "precio_venta", "precio_bolsa", "precio_oferta", "oferta_activa",
             "cantidad", "es_bolsa", "precio_unitario", "subtotal",
         ]
 

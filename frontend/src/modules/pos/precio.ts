@@ -18,6 +18,15 @@ export function precioUnitario(item: CartItem): number {
   return precioProducto(item.producto, item.esBolsa)
 }
 
+/** Lo que se cobra por una línea del carrito, ya con el descuento pactado
+ * sobre ese producto. Espeja el cálculo del backend en
+ * ventas/views.py::_crear_venta — el server siempre recalcula, esto es para
+ * mostrar el mismo número antes de cobrar. */
+export function subtotalLinea(item: CartItem): number {
+  const pct = Math.min(Math.max(Number(item.descuentoPct) || 0, 0), 100)
+  return precioUnitario(item) * Number(item.cantidad) * (1 - pct / 100)
+}
+
 /** Kg reales que representa la línea contra el stock del producto (que
  * siempre está en kg para productos de venta a granel) — 1 bolsa son
  * `bolsa_kg` kilos, no "1". Para productos que no son a granel, no aplica. */

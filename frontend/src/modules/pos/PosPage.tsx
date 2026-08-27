@@ -8,7 +8,7 @@ import { useCajaActual } from '../caja/api'
 import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
-import { cantidadInputId, precioUnitario } from './precio'
+import { cantidadInputId, subtotalLinea } from './precio'
 import { PosStats } from './PosStats'
 import { ProductSearch } from './ProductSearch'
 import { QuickProducts } from './QuickProducts'
@@ -36,7 +36,7 @@ export function PosPage() {
   const [enfocarPeso, setEnfocarPeso] = useState<string | null>(null)
 
   const subtotal = useMemo(
-    () => cart.reduce((acc, item) => acc + precioUnitario(item) * Number(item.cantidad), 0),
+    () => cart.reduce((acc, item) => acc + subtotalLinea(item), 0),
     [cart],
   )
 
@@ -59,7 +59,7 @@ export function PosPage() {
             : i,
         )
       }
-      return [...prev, { producto: producto as CartItem['producto'], cantidad: '1', esBolsa }]
+      return [...prev, { producto: producto as CartItem['producto'], cantidad: '1', esBolsa, descuentoPct: '' }]
     })
     if (producto.venta_por_peso && !esBolsa) {
       setEnfocarPeso(cantidadInputId(producto.id, esBolsa))
@@ -76,6 +76,12 @@ export function PosPage() {
     )
   }
 
+  function cambiarDescuento(productoId: string, esBolsa: boolean, pct: string) {
+    setCart((prev) =>
+      prev.map((i) => (i.producto.id === productoId && i.esBolsa === esBolsa ? { ...i, descuentoPct: pct } : i)),
+    )
+  }
+
   function quitarProducto(productoId: string, esBolsa: boolean) {
     setCart((prev) => prev.filter((i) => !(i.producto.id === productoId && i.esBolsa === esBolsa)))
   }
@@ -86,7 +92,12 @@ export function PosPage() {
     try {
       const total = Math.max(subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0), 0)
       const resultado = await crearVenta({
-        items: cart.map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa })),
+        items: cart.map((i) => ({
+          producto: i.producto.id,
+          cantidad: i.cantidad,
+          es_bolsa: i.esBolsa,
+          descuento_pct: i.descuentoPct || '0',
+        })),
         cliente: datos.cliente?.id ?? null,
         cuenta_pago: datos.cuentaPagoId || null,
         pagos: datos.pagos.length > 0 ? datos.pagos : undefined,
@@ -153,7 +164,13 @@ export function PosPage() {
         <div className="flex flex-1 flex-col gap-3 overflow-hidden">
           <ProductSearch productos={productos} onAgregar={agregarProducto} />
           <QuickProducts productos={productos} onAgregar={agregarProducto} />
-          <Cart items={cart} onCambiarCantidad={cambiarCantidad} onQuitar={quitarProducto} onVaciar={() => setCart([])} />
+          <Cart
+            items={cart}
+            onCambiarCantidad={cambiarCantidad}
+            onCambiarDescuento={cambiarDescuento}
+            onQuitar={quitarProducto}
+            onVaciar={() => setCart([])}
+          />
         </div>
 
         <PaymentPanel

@@ -95,6 +95,34 @@ class VentaCompletaTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Decimal(response.data["total"]), Decimal("300.00"))
 
+    def test_descuento_por_item_solo_afecta_a_ese_producto(self):
+        """"Te hago 10% en la gaseosa": rebaja esa línea y ninguna otra.
+
+        `precio_unitario` queda en el precio de lista (el remito muestra de
+        cuánto fue la rebaja); lo que va neto es el subtotal."""
+        response = self.client.post("/api/ventas/", self._payload(items=[
+            {"producto": str(self.gaseosa.id), "cantidad": "2", "descuento_pct": "10"},
+            {"producto": str(self.queso.id), "cantidad": "1.5"},
+        ]), format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+        venta = Venta.objects.get(id=response.data["id"])
+        item_gaseosa = venta.items.get(producto=self.gaseosa)
+        self.assertEqual(item_gaseosa.precio_unitario, Decimal("200.00"))
+        self.assertEqual(item_gaseosa.subtotal, Decimal("360.00"))
+        # El queso no se tocó.
+        self.assertEqual(venta.items.get(producto=self.queso).subtotal, Decimal("3000.00"))
+        self.assertEqual(venta.total, Decimal("3360.00"))
+
+    def test_rechaza_descuento_por_item_mayor_a_cien(self):
+        """Sin tope, un 200% dejaría el precio negativo y la venta pagaría al
+        cliente. El precio base lo pone el servidor; esto es lo único que el
+        cliente puede mover."""
+        response = self.client.post("/api/ventas/", self._payload(items=[
+            {"producto": str(self.gaseosa.id), "cantidad": "2", "descuento_pct": "200"},
+        ]), format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_permite_vender_con_stock_insuficiente_por_defecto(self):
         """Comercio.permitir_venta_sin_stock nace en True: un stock mal
         cargado (todo en 0 tras una importación, por ejemplo) no puede frenar
@@ -355,19 +383,24 @@ class VentaCuentaCorrienteTests(APITestCase):
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_no_se_puede_superar_el_limite_de_credito(self):
+    def test_permite_fiar_por_encima_del_limite_de_credito(self):
+        """El límite es orientativo (lo muestra el POS en rojo), no un bloqueo:
+        el dueño decide caso por caso si le sigue fiando a un cliente que ya
+        lo superó — no lo decide el sistema por él."""
         self.cliente.limite_credito = Decimal("100")
         self.cliente.save()
         response = self._vender_fiado(monto_cuenta_corriente="200")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.cliente.refresh_from_db()
-        self.assertEqual(self.cliente.saldo_actual, Decimal("0.00"), "no debe quedar deuda de una venta rechazada")
+        self.assertEqual(self.cliente.saldo_actual, Decimal("200.00"))
 
-    def test_limite_de_credito_considera_deuda_previa(self):
+    def test_permite_fiar_por_encima_del_limite_considerando_deuda_previa(self):
         self.cliente.saldo_actual = Decimal("900")
         self.cliente.save()
         response = self._vender_fiado(monto_cuenta_corriente="200")  # 900 + 200 > 1000
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("1100.00"))
 
     def test_anular_venta_fiada_revierte_la_deuda(self):
         venta = self._vender_fiado().data
@@ -378,6 +411,146 @@ class VentaCuentaCorrienteTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.cliente.refresh_from_db()
         self.assertEqual(self.cliente.saldo_actual, Decimal("0.00"))
+
+
+class VentaEditarItemsTests(APITestCase):
+    """El dueño se olvida de cargar algo, o el cliente se llevó de más/de
+    menos, en una venta fiada ya cobrada: hay que poder corregirla sin pasar
+    por anular + recargar, y que la diferencia le pegue a la deuda, no a la
+    caja del día (que ya cerró o ya se contó)."""
+
+    def setUp(self):
+        self.mock_whatsapp = patch("clientes.views.enviar_whatsapp").start()
+        self.addCleanup(patch.stopall)
+
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)", telefono="1155550000")
+        self.user = User.objects.create_user(username="cajero", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Cajero")
+        self.client.force_authenticate(user=self.user)
+        self.caja_sesion = CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.gaseosa = Producto.objects.create(
+            comercio=self.comercio, nombre="Gaseosa", precio_costo=Decimal("100"),
+            precio_venta=Decimal("200"), stock=Decimal("50"),
+        )
+        self.balde = Producto.objects.create(
+            comercio=self.comercio, nombre="Balde", precio_costo=Decimal("200"),
+            precio_venta=Decimal("500"), stock=Decimal("20"),
+        )
+        self.cliente = Cliente.objects.create(
+            comercio=self.comercio, nombre="Juan Fiado", celular="1155559999", limite_credito=Decimal("100000"),
+        )
+
+    def _vender(self, items, monto_cuenta_corriente, cliente=None, efectivo_recibido=None):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": items,
+            "cliente": str((cliente or self.cliente).id),
+            "monto_cuenta_corriente": monto_cuenta_corriente,
+            "efectivo_recibido": efectivo_recibido,
+        }, format="json")
+
+    def test_agrega_producto_olvidado_y_suma_a_la_deuda(self):
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "1"}], monto_cuenta_corriente="200",
+        ).data
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("49.000"))
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [
+                {"producto": str(self.gaseosa.id), "cantidad": "1"},
+                {"producto": str(self.balde.id), "cantidad": "1"},
+            ],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("700.00"))
+        self.assertEqual(Decimal(response.data["monto_cuenta_corriente"]), Decimal("700.00"))
+
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("700.00"))
+        self.balde.refresh_from_db()
+        self.assertEqual(self.balde.stock, Decimal("19.000"))
+        # La gaseosa ya estaba y sigue en la venta: el stock no se toca dos veces.
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("49.000"))
+
+    def test_reduce_cantidad_y_resta_de_la_deuda(self):
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "3"}], monto_cuenta_corriente="600",
+        ).data
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("47.000"))
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("200.00"))
+        self.assertEqual(Decimal(response.data["monto_cuenta_corriente"]), Decimal("200.00"))
+
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("200.00"))
+        self.gaseosa.refresh_from_db()
+        self.assertEqual(self.gaseosa.stock, Decimal("49.000"))
+
+    def test_no_toca_lo_ya_cobrado_en_caja(self):
+        # Total 200: 120 efectivo + 80 fiado. Se agrega un balde de $500, todo
+        # a cuenta corriente — lo cobrado en el momento no se retoca.
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+            monto_cuenta_corriente="80", efectivo_recibido="120",
+        ).data
+        ingreso_antes = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="ingreso").monto
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [
+                {"producto": str(self.gaseosa.id), "cantidad": "1"},
+                {"producto": str(self.balde.id), "cantidad": "1"},
+            ],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Decimal(response.data["monto_cuenta_corriente"]), Decimal("580.00"))
+        self.assertEqual(Decimal(response.data["monto_efectivo"]), Decimal("120.00"))
+
+        ingreso_despues = CajaMovimiento.objects.get(sesion=self.caja_sesion, tipo="ingreso").monto
+        self.assertEqual(ingreso_antes, ingreso_despues)
+        self.assertEqual(CajaMovimiento.objects.filter(sesion=self.caja_sesion, tipo="ingreso").count(), 1)
+
+    def test_no_deja_la_cuenta_corriente_en_negativo(self):
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+            monto_cuenta_corriente="80", efectivo_recibido="120",
+        ).data
+        # Bajar el total muy por debajo de lo ya cobrado en efectivo dejaría
+        # la cuenta corriente negativa: no tiene sentido, se rechaza.
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.gaseosa.id), "cantidad": "0.01"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("80.00"), "no debe tocarse si la corrección se rechaza")
+
+    def test_no_permite_editar_venta_sin_saldo_en_cuenta_corriente(self):
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+            monto_cuenta_corriente="0", efectivo_recibido="200",
+        ).data
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.balde.id), "cantidad": "1"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_permite_editar_venta_anulada(self):
+        venta = self._vender(
+            [{"producto": str(self.gaseosa.id), "cantidad": "1"}], monto_cuenta_corriente="200",
+        ).data
+        self.client.post(f"/api/ventas/{venta['id']}/anular/", {"motivo": "Error"}, format="json")
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.balde.id), "cantidad": "1"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class VentaPorBolsaTests(APITestCase):

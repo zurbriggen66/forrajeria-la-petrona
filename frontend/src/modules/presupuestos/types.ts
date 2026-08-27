@@ -20,6 +20,14 @@ export interface PresupuestoItem {
   producto_nombre: string | null
   unidad_medida: string | null
   bolsa_kg: string | null
+  // Precio ACTUAL del producto (no el congelado en precio_unitario/subtotal),
+  // para poder reabrir el presupuesto en el editor de ítems. Ver
+  // PresupuestoItemSerializer en el backend.
+  venta_por_peso: boolean
+  precio_venta: string | null
+  precio_bolsa: string | null
+  precio_oferta: string | null
+  oferta_activa: boolean
   cantidad: string
   es_bolsa: boolean
   precio_unitario: string
@@ -62,4 +70,5 @@ export interface PresupuestoInput {
 export interface PresupuestoFiltros {
   estado?: EstadoPresupuesto
   search?: string
+  cliente?: string
 }

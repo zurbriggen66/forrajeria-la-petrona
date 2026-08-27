@@ -16,6 +16,12 @@ class VentaItemInputSerializer(serializers.Serializer):
     # True cuando `cantidad` es cantidad de bolsas (no kg sueltos) — ver
     # VentaViewSet._crear_venta, que resuelve precio_bolsa/bolsa_kg contra el Producto.
     es_bolsa = serializers.BooleanField(default=False)
+    # Descuento pactado sobre este producto. Acotado a 0–100 acá: el precio
+    # base lo sigue poniendo el servidor, así que esto es lo único que el
+    # cliente puede mover y no puede volver el precio negativo.
+    descuento_pct = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), default=0
+    )
 
 
 class VentaPagoInputSerializer(serializers.Serializer):
@@ -62,12 +68,32 @@ class VentaCreateSerializer(serializers.Serializer):
 
 class VentaItemSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True, default=None)
+    unidad_medida = serializers.CharField(source="producto.unidad_medida", read_only=True, default=None)
+    bolsa_kg = serializers.DecimalField(
+        source="producto.bolsa_kg", max_digits=14, decimal_places=3, read_only=True, default=None
+    )
+    # Precio ACTUAL del producto (no el precio_unitario congelado en esta
+    # línea): el frontend los necesita para reabrir la venta en el editor de
+    # ítems — ver VentaViewSet.editar_items, que siempre repreciá todo contra
+    # el Producto vigente al guardar, igual que Presupuesto.
+    venta_por_peso = serializers.BooleanField(source="producto.venta_por_peso", read_only=True, default=False)
+    precio_venta = serializers.DecimalField(
+        source="producto.precio_venta", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    precio_bolsa = serializers.DecimalField(
+        source="producto.precio_bolsa", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    precio_oferta = serializers.DecimalField(
+        source="producto.precio_oferta", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    oferta_activa = serializers.BooleanField(source="producto.oferta_activa", read_only=True, default=False)
 
     class Meta:
         model = VentaItem
         fields = [
             "id", "producto", "producto_nombre", "combo", "cantidad", "peso_kg",
-            "precio_unitario", "costo_unitario", "subtotal",
+            "unidad_medida", "bolsa_kg", "venta_por_peso", "precio_venta", "precio_bolsa",
+            "precio_oferta", "oferta_activa", "descuento_pct", "precio_unitario", "costo_unitario", "subtotal",
         ]
 
 
@@ -157,3 +183,17 @@ class VentaAnularSerializer(serializers.Serializer):
         if not value.strip():
             raise serializers.ValidationError("El motivo de anulación es obligatorio.")
         return value
+
+
+class VentaEditarItemsSerializer(serializers.Serializer):
+    """Input para corregir los productos de una venta fiada ya cobrada (el
+    dueño se olvidó de cargar algo, o el cliente se llevó de más/de menos).
+    Reemplaza la lista entera de ítems — mismo criterio que Presupuesto — y
+    sólo aplica a lo que hay en cuenta corriente; ver VentaViewSet.editar_items."""
+
+    items = VentaItemInputSerializer(many=True)
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError("La venta necesita al menos un ítem.")
+        return items

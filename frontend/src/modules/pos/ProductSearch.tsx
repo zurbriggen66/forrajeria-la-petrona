@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Search } from 'lucide-react'
 import { formatMoney } from '../../lib/format'
 import { etiquetaEnvase } from '../productos/presentacion'
+import { formatCantidadStock } from '../productos/stock'
 import { buscarProductoPorCodigo, useBuscarProductosPos } from './api'
 import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
@@ -117,7 +118,7 @@ export function ProductSearch({ productos, onAgregar }: Props) {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-text">{p.nombre}</div>
                   <div className="text-xs text-text-dim">
-                    {p.codigo_barras || 'sin código'} · Stock: {p.stock}{p.venta_por_peso ? ` ${p.unidad_medida}` : ''}
+                    {p.codigo_barras || 'sin código'} · Stock: {formatCantidadStock(p.stock, p)}
                   </div>
                 </div>
 

@@ -305,9 +305,10 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
         <Button
           disabled={
             disabled || cobrando
-            || (esCuentaCorriente && disponibleCredito !== null && total > disponibleCredito)
             // Un mixto que no cuadra lo rechaza el backend igual (dejaría la
             // caja descuadrada): se bloquea acá para avisar antes, no después.
+            // El límite de crédito NO bloquea: es sólo el aviso en rojo de
+            // arriba — el dueño decide si le sigue fiando a ese cliente.
             || (esMixto && !mixtoCuadra)
           }
           onClick={() => onCobrar({

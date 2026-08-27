@@ -9,7 +9,7 @@ import { useFacturarVenta } from '../fiscal/api'
 import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
-import { precioUnitario } from './precio'
+import { subtotalLinea } from './precio'
 import type { CartItem, VentaResult } from './types'
 
 export type TicketData =
@@ -70,7 +70,7 @@ export function TicketModal({ data, onNuevaVenta }: { data: TicketData; onNuevaV
                     {item.cantidad}× {item.producto.nombre}{item.esBolsa && ` (bolsa ${Number(item.producto.bolsa_kg)}kg)`}
                   </span>
                   <span className="tabular-nums text-text">
-                    {formatMoney(precioUnitario(item) * Number(item.cantidad))}
+                    {formatMoney(subtotalLinea(item))}
                   </span>
                 </div>
               ))}

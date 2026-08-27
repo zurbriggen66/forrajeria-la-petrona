@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { AlertTriangle, Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Minus, Package, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
 import { Table, type Column } from '../../components/ui/Table'
 import { formatMoney } from '../../lib/format'
-import { cantidadInputId, kgEquivalente, precioUnitario } from './precio'
+import { formatCantidadStock } from '../productos/stock'
+import { cantidadInputId, kgEquivalente, precioUnitario, subtotalLinea } from './precio'
 import type { CartItem } from './types'
 
 interface Props {
   items: CartItem[]
   onCambiarCantidad: (productoId: string, esBolsa: boolean, cantidad: string) => void
+  onCambiarDescuento: (productoId: string, esBolsa: boolean, pct: string) => void
   onQuitar: (productoId: string, esBolsa: boolean) => void
   onVaciar: () => void
 }
@@ -92,7 +94,23 @@ function superaStock(item: CartItem) {
   return Number(item.cantidad) >= Number(item.producto.stock)
 }
 
-export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
+/** Stock disponible, en la misma unidad en la que el dueño lo piensa (kg o
+ * bolsas — ver formatCantidadStock). Se muestra siempre, no sólo cuando ya
+ * se pasó: el cajero tiene que verlo ANTES de tipear la cantidad, no
+ * enterarse recién cuando ya cargó de más. */
+function StockLinea({ item }: { item: CartItem }) {
+  const agotado = Number(item.producto.stock) <= 0
+  return (
+    <span className={`flex items-center gap-1 ${
+      superaStock(item) ? 'text-danger' : agotado ? 'text-warning' : 'text-text-dim'
+    }`}>
+      <Package size={10} className="shrink-0" />
+      Stock: {formatCantidadStock(item.producto.stock, item.producto)}
+    </span>
+  )
+}
+
+export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, onVaciar }: Props) {
   if (items.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border text-text-dim">
@@ -108,7 +126,7 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
   }
 
   const cantidadTotal = items.reduce((acc, i) => acc + Number(i.cantidad), 0)
-  const subtotalTotal = items.reduce((acc, i) => acc + precioUnitario(i) * Number(i.cantidad), 0)
+  const subtotalTotal = items.reduce((acc, i) => acc + subtotalLinea(i), 0)
 
   const columns: Column<CartItem>[] = [
     {
@@ -116,17 +134,21 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       render: (item) => (
         <div className="flex items-center gap-1.5">
           <div>
-            <div className="font-medium text-text">
+            <div className="flex items-center gap-1.5 font-medium text-text">
               {item.producto.nombre}
-              {item.esBolsa && <span className="text-text-dim"> (bolsa {Number(item.producto.bolsa_kg)}kg)</span>}
+              {item.esBolsa && <span className="font-normal text-text-dim"> (bolsa {Number(item.producto.bolsa_kg)}kg)</span>}
+              {superaStock(item) && (
+                <span title="Sin stock suficiente para esta cantidad">
+                  <AlertTriangle size={13} className="shrink-0 text-danger" />
+                </span>
+              )}
             </div>
-            <div className="text-xs text-text-dim">{item.producto.codigo_barras || 'sin código'}</div>
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-text-dim">{item.producto.codigo_barras || 'sin código'}</span>
+              <span className="text-text-dim">·</span>
+              <StockLinea item={item} />
+            </div>
           </div>
-          {superaStock(item) && (
-            <span title={`Sin stock suficiente (stock: ${item.producto.stock}${item.producto.venta_por_peso ? 'kg' : ''})`}>
-              <AlertTriangle size={13} className="shrink-0 text-warning" />
-            </span>
-          )}
         </div>
       ),
     },
@@ -142,13 +164,25 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
             <button
               onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(Math.max(1, cantidad - 1)))}
               className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
+              aria-label={`Restar uno de ${item.producto.nombre}`}
             >
               <Minus size={15} />
             </button>
-            <span className="w-7 text-center tabular-nums">{cantidad}</span>
+            {/* Tipeable y no un <span>: cargar 24 bolsas a botonazos es
+                absurdo. El +/- queda para el caso de a uno, que es el común. */}
+            <input
+              id={cantidadInputId(item.producto.id, item.esBolsa)}
+              type="number" step="1" min="1"
+              aria-label={`Cantidad de ${item.producto.nombre}`}
+              onFocus={(e) => e.target.select()}
+              value={item.cantidad}
+              onChange={(e) => onCambiarCantidad(item.producto.id, item.esBolsa, e.target.value)}
+              className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-center text-sm tabular-nums focus:border-accent focus:outline-none"
+            />
             <button
               onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(cantidad + 1))}
               className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
+              aria-label={`Sumar uno de ${item.producto.nombre}`}
             >
               <Plus size={15} />
             </button>
@@ -158,16 +192,36 @@ export function Cart({ items, onCambiarCantidad, onQuitar, onVaciar }: Props) {
       },
     },
     {
+      header: 'Desc. %',
+      render: (item) => (
+        <input
+          type="number" step="1" min="0" max="100" placeholder="0"
+          aria-label={`Descuento en ${item.producto.nombre}`}
+          onFocus={(e) => e.target.select()}
+          value={item.descuentoPct}
+          onChange={(e) => onCambiarDescuento(item.producto.id, item.esBolsa, e.target.value)}
+          className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+        />
+      ),
+    },
+    {
       header: 'Precio',
       render: (item) => <span className="tabular-nums text-text-dim">{formatMoney(precioUnitario(item))}</span>,
     },
     {
       header: 'Subtotal',
-      render: (item) => (
-        <span className="tabular-nums font-medium text-text">
-          {formatMoney(precioUnitario(item) * Number(item.cantidad))}
-        </span>
-      ),
+      render: (item) => {
+        const bruto = precioUnitario(item) * Number(item.cantidad)
+        const neto = subtotalLinea(item)
+        return (
+          <div className="flex flex-col leading-tight">
+            <span className="tabular-nums font-medium text-text">{formatMoney(neto)}</span>
+            {neto !== bruto && (
+              <span className="text-[11px] tabular-nums text-text-dim line-through">{formatMoney(bruto)}</span>
+            )}
+          </div>
+        )
+      },
     },
     {
       header: '',

@@ -69,6 +69,12 @@ class VentaItem(BaseModel):
     combo = models.ForeignKey(Combo, on_delete=models.SET_NULL, null=True, blank=True)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3, default=1)
     peso_kg = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    # Rebaja pactada sobre ESTE producto ("te hago 10% en el balanceado"),
+    # distinta del descuento de Venta que se aplica al total. Se guarda el
+    # porcentaje y no el precio ya rebajado para que el servidor siga siendo
+    # el único que resuelve el precio de lista contra Producto.
+    descuento_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    # Precio de lista, antes del descuento por ítem. `subtotal` sí va neto.
     precio_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     costo_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)

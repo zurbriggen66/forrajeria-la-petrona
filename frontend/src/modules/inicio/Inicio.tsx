@@ -44,7 +44,7 @@ function Variacion({ pct }: { pct: number | null }) {
 
 function Panel({ titulo, accion, children }: { titulo: string; accion?: ReactNode; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+    <section className="tarjeta-viva flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-sm font-semibold text-text">{titulo}</h2>
         {accion}
@@ -68,9 +68,9 @@ function Pendiente({ icono: Icono, label, valor, to, alerta }: {
   return (
     <Link
       to={to}
-      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors ${
+      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all ${
         activo
-          ? 'border-border bg-surface-2 text-text hover:border-accent/50'
+          ? 'border-border bg-surface-2 text-text hover:translate-x-0.5 hover:border-accent/60'
           : 'border-transparent text-text-dim hover:bg-surface-2'
       }`}
     >
@@ -127,8 +127,16 @@ export function Inicio() {
   ]
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <div className="relative flex flex-col gap-5 overflow-hidden">
+      {/* Resplandor de ambiente detrás del saludo, mismo recurso que el login
+          (.ambient-blob), para que la pantalla de todos los días tenga la
+          misma firma visual que la puerta de entrada. */}
+      <div
+        aria-hidden
+        className="ambient-blob pointer-events-none absolute -left-24 -top-32 h-[420px] w-[420px] rounded-full bg-gradient-brand opacity-[0.16] blur-[110px]"
+      />
+
+      <header className="relative flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-xl font-semibold text-text">
             {saludo()}, {user?.nombre_completo?.split(' ')[0] ?? ''}
@@ -146,14 +154,14 @@ export function Inicio() {
             <Link
               key={a.to}
               to={a.to}
-              className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text transition-colors hover:border-accent/50 hover:text-accent"
+              className="acceso-vivo flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-text hover:border-accent/60 hover:text-accent"
             >
               <a.icono size={15} /> {a.label}
             </Link>
           ))}
           <Link
             to="/caja/contenedores"
-            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+            className={`acceso-vivo glow-fuerte flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${
               caja
                 ? 'border border-accent-2/40 bg-accent-2/10 text-accent-2 hover:bg-accent-2/20'
                 : 'bg-gradient-brand text-accent-ink hover:brightness-110'

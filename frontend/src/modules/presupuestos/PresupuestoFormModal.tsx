@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Loader2, Package, Plus, Trash2, UserRound } from 'lucide-react'
+import { Loader2, Plus, Trash2, UserRound } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
@@ -14,14 +14,44 @@ import type { Producto } from '../productos/types'
 import { useCreatePresupuesto, useUpdatePresupuesto } from './api'
 import type { Presupuesto } from './types'
 
+// Sólo los campos que hacen falta para el precio y el picker (ver
+// ProductoPicker): un ítem ya guardado no trae el Producto completo, así que
+// se reconstruye con lo que manda PresupuestoItemSerializer.
+type ProductoCotizable = Pick<
+  Producto,
+  'id' | 'nombre' | 'venta_por_peso' | 'unidad_medida' | 'bolsa_kg' | 'precio_bolsa' | 'precio_venta' | 'precio_oferta' | 'oferta_activa'
+>
+
 interface Row {
-  producto: Producto | null
+  producto: ProductoCotizable | null
   cantidad: string
   esBolsa: boolean
 }
 
 function filaVacia(): Row {
   return { producto: null, cantidad: '1', esBolsa: false }
+}
+
+/** Ítem ya guardado → fila editable. El precio que trae es el ACTUAL del
+ * producto (no el congelado al momento del presupuesto): reabrir para editar
+ * ya implica repreciar, porque el servidor siempre va a recalcular todo de
+ * nuevo al guardar (ver PresupuestoViewSet._guardar). */
+function filaDesdeItem(item: Presupuesto['items'][number]): Row {
+  return {
+    producto: item.producto ? {
+      id: item.producto,
+      nombre: item.producto_nombre ?? 'Producto',
+      venta_por_peso: item.venta_por_peso,
+      unidad_medida: item.unidad_medida ?? '',
+      bolsa_kg: item.bolsa_kg,
+      precio_bolsa: item.precio_bolsa,
+      precio_venta: item.precio_venta ?? '0',
+      precio_oferta: item.precio_oferta,
+      oferta_activa: item.oferta_activa,
+    } : null,
+    cantidad: item.cantidad,
+    esBolsa: item.es_bolsa,
+  }
 }
 
 export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: Presupuesto; onClose: () => void }) {
@@ -36,7 +66,9 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
   const [validez, setValidez] = useState(presupuesto?.validez ?? '')
   const [descuento, setDescuento] = useState(presupuesto?.descuento ?? '0')
   const [notas, setNotas] = useState(presupuesto?.notas ?? '')
-  const [items, setItems] = useState<Row[]>([filaVacia()])
+  const [items, setItems] = useState<Row[]>(() =>
+    presupuesto && presupuesto.items.length > 0 ? presupuesto.items.map(filaDesdeItem) : [filaVacia()],
+  )
 
   const { data: clientesEncontrados } = useClientesSearch(clienteId ? '' : clienteNombre)
 
@@ -44,24 +76,21 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
-  // En edición los productos ya cargados no se re-eligen (mismo criterio que
-  // RepartoFormModal): se muestran como están y se reenvían tal cual.
-  const subtotal = esEdicion
-    ? Number(presupuesto!.subtotal)
-    : items.reduce(
-        (acc, row) => acc + (row.producto ? precioProducto(row.producto, row.esBolsa) * Number(row.cantidad || 0) : 0),
-        0,
-      )
+  // El servidor siempre repriecia todo contra el Producto vigente al guardar
+  // (ver PresupuestoViewSet._guardar), así que el subtotal en pantalla se
+  // calcula igual en alta y en edición — es el mismo número que va a cobrar.
+  const subtotal = items.reduce(
+    (acc, row) => acc + (row.producto ? precioProducto(row.producto, row.esBolsa) * Number(row.cantidad || 0) : 0),
+    0,
+  )
   const total = Math.max(subtotal - Number(descuento || 0), 0)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
-    const itemsInput = esEdicion
-      ? presupuesto!.items.map((i) => ({ producto: i.producto!, cantidad: i.cantidad, es_bolsa: i.es_bolsa }))
-      : items
-          .filter((i): i is Row & { producto: Producto } => i.producto !== null)
-          .map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
+    const itemsInput = items
+      .filter((i): i is Row & { producto: ProductoCotizable } => i.producto !== null)
+      .map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
 
     if (itemsInput.length === 0) {
       toast('Agregá al menos un producto al presupuesto', 'error')
@@ -133,32 +162,18 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
         <section>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Productos cotizados</span>
-            {!esEdicion && (
-              <Button type="button" variant="ghost" onClick={() => setItems((p) => [...p, filaVacia()])} className="!px-2 !py-1 text-xs">
-                <Plus size={13} /> Agregar producto
-              </Button>
-            )}
+            <Button type="button" variant="ghost" onClick={() => setItems((p) => [...p, filaVacia()])} className="!px-2 !py-1 text-xs">
+              <Plus size={13} /> Agregar producto
+            </Button>
           </div>
 
-          {esEdicion ? (
-            <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2/50 p-3">
-              {presupuesto!.items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2 text-text">
-                    <Package size={13} className="text-text-dim" />
-                    {item.cantidad}{item.es_bolsa ? ` bolsa${Number(item.cantidad) === 1 ? '' : 's'} de ${Number(item.bolsa_kg)}kg` : ` ${item.unidad_medida ?? ''}`}
-                    {' · '}{item.producto_nombre}
-                  </span>
-                  <span className="tabular-nums text-text-dim">{formatMoney(item.subtotal)}</span>
-                </div>
-              ))}
-              <p className="mt-1 border-t border-border pt-2 text-xs text-text-dim">
-                Para cambiar los productos, cargá un presupuesto nuevo. Acá podés corregir el
-                número, la validez, el descuento y los datos del cliente.
-              </p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
+          {esEdicion && (
+            <p className="mb-2 text-xs text-text-dim">
+              Los precios se recalculan a los vigentes hoy, no a los del día del presupuesto.
+            </p>
+          )}
+
+          <div className="flex flex-col gap-2">
               {items.map((row, i) => {
                 const conBolsa = row.producto ? tieneBolsa(row.producto) : false
                 const precio = row.producto ? precioProducto(row.producto, row.esBolsa) : 0
@@ -208,8 +223,7 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
                   </div>
                 )
               })}
-            </div>
-          )}
+          </div>
         </section>
 
         <section className="grid grid-cols-2 gap-4 border-t border-border pt-4">

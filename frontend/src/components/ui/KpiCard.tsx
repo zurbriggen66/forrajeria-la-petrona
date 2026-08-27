@@ -18,7 +18,7 @@ const ACCENT_ICON_BG: Record<NonNullable<KpiCardProps['accent']>, string> = {
 
 export function KpiCard({ label, value, subtitle, trend, icon: Icon, accent = 'accent' }: KpiCardProps) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-border bg-surface p-4 transition-shadow hover:glow-accent">
+    <div className="tarjeta-viva group relative overflow-hidden rounded-xl border border-border bg-surface p-4 hover:glow-accent">
       <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-brand opacity-0 blur-2xl transition-opacity group-hover:opacity-20" />
       <div className="relative flex items-start justify-between">
         <span className="text-xs font-medium uppercase tracking-wide text-text-dim">{label}</span>

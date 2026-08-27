@@ -2,8 +2,20 @@ import { useMemo, useState } from 'react'
 import { formatMoney } from '../../lib/format'
 import { useCategorias } from '../productos/api'
 import { etiquetaEnvase } from '../productos/presentacion'
+import { formatCantidadStock } from '../productos/stock'
 import { tieneBolsa } from './precio'
 import type { Producto } from '../productos/types'
+
+/** Mismo criterio que en el carrito: mostrar el stock ANTES de tocar el
+ * producto, no que el cajero se entere recién al cargar la cantidad. */
+function StockChip({ p }: { p: Producto }) {
+  const stock = Number(p.stock)
+  return (
+    <span className={`text-[10px] leading-none ${stock <= 0 ? 'text-warning' : 'text-text-dim'}`}>
+      Stock: {formatCantidadStock(p.stock, p)}
+    </span>
+  )
+}
 
 interface Props {
   productos: Producto[]
@@ -11,12 +23,17 @@ interface Props {
 }
 
 const DESTACADOS = 'Destacados'
+const TODAS = 'Todas'
+// Grilla de UN CLIC, no el buscador exhaustivo (para eso está ProductSearch,
+// que sí trae todo el catálogo por texto): un catálogo grande tarda en
+// pintar cientos de tarjetas, así que se corta acá y listo.
+const MAX_VISIBLES = 20
 
 /** Grilla de un clic para no tener que tipear en el buscador — con tabs por
- * categoría (además de "Destacados") para que se pueda navegar todo el
- * catálogo de la forrajería, no sólo el puñado marcado a mano. Los productos
- * a granel con bolsa cerrada muestran un botón aparte para sumar la bolsa
- * directo desde acá, sin pasar por el buscador. */
+ * categoría (además de "Destacados" y "Todas") para que se pueda navegar el
+ * catálogo de la forrajería sin escribir nada. Los productos a granel con
+ * bolsa cerrada muestran un botón aparte para sumar la bolsa directo desde
+ * acá, sin pasar por el buscador. */
 export function QuickProducts({ productos, onAgregar }: Props) {
   const { data: categorias } = useCategorias()
   const [tabElegida, setTabElegida] = useState<string | null>(null)
@@ -29,18 +46,23 @@ export function QuickProducts({ productos, onAgregar }: Props) {
       .filter((c) => c.activa && presentes.has(c.nombre))
       .sort((a, b) => a.orden - b.orden)
       .map((c) => c.nombre)
-    return hayDestacados ? [DESTACADOS, ...nombres] : nombres
+    return [...(hayDestacados ? [DESTACADOS] : []), TODAS, ...nombres]
   }, [productos, categorias, hayDestacados])
 
   const tabActiva = tabElegida && tabs.includes(tabElegida) ? tabElegida : tabs[0]
 
-  const visibles = useMemo(() => {
+  const enTab = useMemo(() => {
     if (!tabActiva) return []
     if (tabActiva === DESTACADOS) return productos.filter((p) => p.destacado)
+    if (tabActiva === TODAS) return productos
     return productos.filter((p) => p.categoria === tabActiva)
   }, [productos, tabActiva])
 
-  if (tabs.length === 0) return null
+  const visibles = enTab.slice(0, MAX_VISIBLES)
+
+  // "Todas" siempre está en tabs; lo que de verdad indica catálogo vacío (o
+  // todavía cargando) es no tener productos, no la cantidad de tabs.
+  if (productos.length === 0) return null
 
   return (
     <div className="flex flex-col gap-2">
@@ -74,6 +96,7 @@ export function QuickProducts({ productos, onAgregar }: Props) {
               {conBolsa ? (
                 <>
                   <span className="line-clamp-2 min-h-8 text-sm font-medium leading-tight text-text">{p.nombre}</span>
+                  <StockChip p={p} />
                   <div className="mt-2 flex flex-col gap-1">
                     <button
                       onClick={() => onAgregar(p, false)}
@@ -104,6 +127,7 @@ export function QuickProducts({ productos, onAgregar }: Props) {
                     {precioSuelto}
                     {p.venta_por_peso && <span className="text-xs font-normal text-text-dim"> /{p.unidad_medida}</span>}
                   </span>
+                  <StockChip p={p} />
                 </button>
               )}
             </div>
@@ -113,6 +137,11 @@ export function QuickProducts({ productos, onAgregar }: Props) {
           <p className="col-span-full py-6 text-center text-sm text-text-dim">Sin productos en esta categoría.</p>
         )}
       </div>
+      {enTab.length > MAX_VISIBLES && (
+        <p className="text-center text-xs text-text-dim">
+          Mostrando {MAX_VISIBLES} de {enTab.length} — buscá por nombre o código para ver el resto.
+        </p>
+      )}
     </div>
   )
 }

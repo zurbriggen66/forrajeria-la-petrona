@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { AlertTriangle, Ban, Loader2, Printer } from 'lucide-react'
+import { AlertTriangle, Ban, Loader2, Pencil, Printer } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Remito } from './Remito'
@@ -9,6 +9,7 @@ import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useAnularVenta } from './api'
 import type { Venta } from './types'
+import { VentaEditarItemsModal } from './VentaEditarItemsModal'
 
 function formatFecha(iso: string) {
   return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
@@ -19,6 +20,13 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
   const anularVenta = useAnularVenta()
   const [anulando, setAnulando] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [editandoItems, setEditandoItems] = useState(false)
+
+  // Sólo se puede corregir lo que quedó fiado: es a la cuenta corriente
+  // adonde le pega la diferencia (ver VentaViewSet.editar_items). Una
+  // facturada queda fija por integridad fiscal (el CAE ya salió con esos
+  // ítems); una anulada no tiene nada que corregir.
+  const puedeEditarItems = !venta.anulada && !venta.facturado && Number(venta.monto_cuenta_corriente) > 0
 
   async function handleAnular(e: FormEvent) {
     e.preventDefault()
@@ -87,6 +95,11 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
           <Button variant="secondary" onClick={imprimir}>
             <Printer size={15} /> Imprimir remito
           </Button>
+          {puedeEditarItems && (
+            <Button variant="secondary" onClick={() => setEditandoItems(true)}>
+              <Pencil size={15} /> Corregir productos
+            </Button>
+          )}
           {!venta.anulada && !anulando && (
             <Button variant="danger" onClick={() => setAnulando(true)}>
               <Ban size={15} /> Anular venta
@@ -115,6 +128,8 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
           </form>
         )}
       </div>
+
+      {editandoItems && <VentaEditarItemsModal venta={venta} onClose={() => setEditandoItems(false)} />}
     </Modal>
   )
 }

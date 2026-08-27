@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from clientes.models import Cliente
 from core.models import Comercio, UsuarioComercio
 from productos.models import Producto
 
@@ -72,6 +73,31 @@ class PresupuestoTests(APITestCase):
         response = self.client.post(f"/api/presupuestos/{presupuesto_id}/estado/", {"estado": "aprobado"}, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(Presupuesto.objects.get(id=presupuesto_id).estado, "aprobado")
+
+    def test_filtra_por_cliente_y_estado_para_la_ficha_del_cliente(self):
+        """La ficha del cliente sólo quiere ver SUS presupuestos aprobados
+        (ver ClienteDetalleModal) — no los de otro cliente, ni los que
+        todavía están pendientes de que diga que sí."""
+        cliente = Cliente.objects.create(comercio=self.comercio, nombre="Juan Pérez")
+        otro_cliente = Cliente.objects.create(comercio=self.comercio, nombre="Otro Cliente")
+
+        aprobado = self.client.post(
+            "/api/presupuestos/", self._payload(cliente=str(cliente.id)), format="json"
+        ).data
+        self.client.post(f"/api/presupuestos/{aprobado['id']}/estado/", {"estado": "aprobado"}, format="json")
+
+        # Pendiente del mismo cliente: no debe aparecer en el filtro.
+        self.client.post("/api/presupuestos/", self._payload(cliente=str(cliente.id)), format="json")
+        # Aprobado de otro cliente: tampoco.
+        otro_aprobado = self.client.post(
+            "/api/presupuestos/", self._payload(cliente=str(otro_cliente.id)), format="json"
+        ).data
+        self.client.post(f"/api/presupuestos/{otro_aprobado['id']}/estado/", {"estado": "aprobado"}, format="json")
+
+        response = self.client.get(f"/api/presupuestos/?cliente={cliente.id}&estado=aprobado")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        ids = [p["id"] for p in response.data["results"]]
+        self.assertEqual(ids, [aprobado["id"]])
 
     def test_editar_reemplaza_los_items_y_recalcula(self):
         creado = self.client.post("/api/presupuestos/", self._payload(), format="json")

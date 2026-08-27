@@ -36,7 +36,15 @@ function emptyForm(): ProductoInput {
   }
 }
 
-export function ProductoFormModal({ producto, onClose }: { producto?: Producto; onClose: () => void }) {
+export function ProductoFormModal({ producto, onClose, onCreated }: {
+  producto?: Producto
+  onClose: () => void
+  /** Para cuando este formulario se abre desde otro (ej. cargar un producto
+   * nuevo en medio de una compra): avisa qué producto quedó creado para que
+   * el que lo abrió lo pueda dejar seleccionado, sin que el usuario tenga
+   * que buscarlo de nuevo. No se llama al editar, sólo al crear. */
+  onCreated?: (producto: Producto) => void
+}) {
   const { toast } = useToast()
   const { data: categorias } = useCategorias()
   const { data: proveedores } = useProveedores()
@@ -146,8 +154,9 @@ export function ProductoFormModal({ producto, onClose }: { producto?: Producto; 
         await updateProducto.mutateAsync({ id: producto.id, input: conCerosExplicitos(form) })
         toast('Producto actualizado')
       } else {
-        await createProducto.mutateAsync(conCerosExplicitos(form))
+        const creado = await createProducto.mutateAsync(conCerosExplicitos(form))
         toast('Producto creado')
+        onCreated?.(creado)
       }
       onClose()
     } catch (err) {

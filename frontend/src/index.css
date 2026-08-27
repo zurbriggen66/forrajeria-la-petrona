@@ -7,23 +7,23 @@
 @import "@fontsource/jetbrains-mono/500.css";
 
 /*
-  Identidad TIENDA-IA — "panel de instrumentos": grafito cálido casi negro,
-  un solo acento cobre/ámbar (nada de gradiente violeta-cian genérico de IA),
-  verde apagado como secundario para estados positivos. Formas más rectas
+  Identidad TIENDA-IA v2 — "panel de control" negro y azul, moderno y de
+  alto contraste: negro casi absoluto de fondo, acento azul eléctrico único,
+  verde-agua como secundario para estados positivos. Formas más rectas
   (radios reducidos) en vez del rounded-lg blando típico.
 */
 @theme {
-  --color-bg: #0f0e0c;
-  --color-surface: #1a1815;
-  --color-surface-2: #242019;
-  --color-border: #322c22;
-  --color-accent: #d97a2b;
-  --color-accent-ink: #1c1206;
-  --color-accent-2: #3fa88a;
-  --color-warning: #eab308;
-  --color-danger: #ef4444;
-  --color-text: #f1eee7;
-  --color-text-dim: #9c9488;
+  --color-bg: #030507;
+  --color-surface: #0a0e15;
+  --color-surface-2: #101724;
+  --color-border: #223449;
+  --color-accent: #2f8fff;
+  --color-accent-ink: #001328;
+  --color-accent-2: #00e0a8;
+  --color-warning: #ffc21a;
+  --color-danger: #ff4444;
+  --color-text: #eaf2fb;
+  --color-text-dim: #7d93ad;
 
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-sans: 'Inter', system-ui, 'Segoe UI', sans-serif;
@@ -38,12 +38,64 @@ html {
   color-scheme: dark;
 }
 
+@keyframes pulso-acento {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+
+/* Brillo fuerte de acento — para lo que tiene que llamar la atención de
+ * verdad (CTA principal, botón de caja), más marcado que .glow-accent. */
+.glow-fuerte {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, var(--color-border)),
+    0 16px 40px -12px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+/* Tarjeta/panel que "flota" al pasar el mouse: se levanta un toque y el
+ * borde se enciende con el acento. Pensada para tarjetas de contenido
+ * (paneles, KPIs), no para filas de tabla ni botones chicos. */
+.tarjeta-viva {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.tarjeta-viva:hover {
+  transform: translateY(-3px) scale(1.015);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+}
+
+/* Accesos rápidos / CTAs: se levantan y tiran un pulso de acento al entrar
+ * el mouse, y se hunden un toque al clickear — feedback táctil. */
+.acceso-vivo {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.acceso-vivo:hover {
+  transform: translateY(-2px);
+  animation: pulso-acento 1.6s ease-out 1;
+}
+.acceso-vivo:active {
+  transform: translateY(0) scale(0.97);
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
+}
+
+/* Grilla fina tipo plano técnico + resplandor difuso arriba a la izquierda:
+ * lee "panel de control" en vez de superficie plana, sin restarle
+ * legibilidad a lo que va encima (tablas y tarjetas son opacas). Va en una
+ * clase aparte (no en body) porque el layout y el login pintan su propio
+ * fondo opaco de punta a punta, que taparía cualquier textura puesta en
+ * body detrás de ellos. */
+.fondo-tecnico {
+  background-image:
+    radial-gradient(ellipse 1100px 600px at 12% -10%, color-mix(in srgb, var(--color-accent) 13%, transparent), transparent),
+    linear-gradient(color-mix(in srgb, var(--color-accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 6%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+  background-attachment: fixed;
 }
 
 #root {
@@ -102,6 +154,16 @@ body {
 }
 
 @media print {
+  /* El fondo oscuro del tema es de <body>, y se propaga al lienzo de toda la
+     página. .hoja-impresion sólo pinta blanco su propia caja, así que cuando
+     el remito no llegaba al pie de la hoja el resto salía negro. Acá el papel
+     manda: lienzo blanco de punta a punta. */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    color-scheme: light;
+  }
+
   body > *:not(.hoja-impresion) {
     display: none !important;
   }

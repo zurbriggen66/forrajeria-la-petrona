@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
+import { FileText, Loader2, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { Modal } from '../../components/ui/Modal'
@@ -7,8 +7,12 @@ import { Select } from '../../components/ui/Select'
 import { Table, type Column } from '../../components/ui/Table'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney } from '../../lib/format'
+import { formatFechaSola, formatMoney } from '../../lib/format'
+import { PresupuestoFormModal } from '../presupuestos/PresupuestoFormModal'
+import { usePresupuestos } from '../presupuestos/api'
+import type { Presupuesto } from '../presupuestos/types'
 import { useVendedores, useVentas } from '../ventas/api'
+import { TicketDetalleModal } from '../ventas/TicketDetalleModal'
 import type { Venta } from '../ventas/types'
 import {
   useAsignacionesCliente,
@@ -102,9 +106,16 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   const [editando, setEditando] = useState(false)
   const [movimientoModo, setMovimientoModo] = useState<'pago' | 'ajuste' | null>(null)
   const [movimientoEditando, setMovimientoEditando] = useState<ClienteMovimiento | null>(null)
+  const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null)
+  const [presupuestoSeleccionado, setPresupuestoSeleccionado] = useState<Presupuesto | null>(null)
 
   const { data: movimientos, isLoading: cargandoMovimientos } = useMovimientosCliente(cliente.id)
   const { data: ventasData, isLoading: cargandoVentas } = useVentas({ cliente: cliente.id })
+  // Sólo los aprobados: son los que el cliente ya aceptó, el resto (pendiente,
+  // rechazado, vencido) todavía no es un compromiso y no pertenece acá.
+  const { data: presupuestosAprobados, isLoading: cargandoPresupuestos } = usePresupuestos({
+    cliente: cliente.id, estado: 'aprobado',
+  })
   const eliminarMovimiento = useEliminarMovimientoCliente(cliente.id)
   const eliminarCliente = useEliminarCliente()
 
@@ -181,6 +192,16 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
     },
   ]
 
+  const columnasPresupuestos: Column<Presupuesto>[] = [
+    { header: 'Número', render: (p) => p.numero || 'Sin número' },
+    { header: 'Fecha', render: (p) => formatFecha(p.created_at) },
+    {
+      header: 'Válido hasta',
+      render: (p) => (p.validez ? formatFechaSola(p.validez) : '—'),
+    },
+    { header: 'Total', render: (p) => formatMoney(p.total), className: 'tabular-nums' },
+  ]
+
   if (editando) {
     return <ClienteFormModal cliente={cliente} onClose={() => setEditando(false)} />
   }
@@ -231,10 +252,37 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
             <Receipt size={15} className="text-accent" /> Ventas de este cliente
           </h3>
+          <p className="mb-2 text-xs text-text-dim">Tocá una fila para ver el detalle: qué se llevó, no sólo cuánto.</p>
           {cargandoVentas ? (
             <div className="flex items-center gap-2 py-6 text-text-dim"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
           ) : (
-            <Table columns={columnasVentas} rows={ventasData?.results ?? []} rowKey={(v) => v.id} emptyMessage="Todavía no le vendiste nada." />
+            <Table
+              columns={columnasVentas}
+              rows={ventasData?.results ?? []}
+              rowKey={(v) => v.id}
+              emptyMessage="Todavía no le vendiste nada."
+              onRowClick={setVentaSeleccionada}
+            />
+          )}
+        </div>
+
+        <div>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
+            <FileText size={15} className="text-accent" /> Presupuestos aprobados
+          </h3>
+          {/* No son ventas todavía: sólo cotizó y el cliente dijo que sí. La
+              venta real se carga en el POS cuando la viene a buscar. */}
+          <p className="mb-2 text-xs text-text-dim">Tocá una fila para ver el detalle de lo cotizado.</p>
+          {cargandoPresupuestos ? (
+            <div className="flex items-center gap-2 py-6 text-text-dim"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
+          ) : (
+            <Table
+              columns={columnasPresupuestos}
+              rows={presupuestosAprobados ?? []}
+              rowKey={(p) => p.id}
+              emptyMessage="Sin presupuestos aprobados todavía."
+              onRowClick={setPresupuestoSeleccionado}
+            />
           )}
         </div>
       </div>
@@ -249,6 +297,12 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           movimiento={movimientoEditando}
           onClose={() => setMovimientoEditando(null)}
         />
+      )}
+      {ventaSeleccionada && (
+        <TicketDetalleModal venta={ventaSeleccionada} onClose={() => setVentaSeleccionada(null)} />
+      )}
+      {presupuestoSeleccionado && (
+        <PresupuestoFormModal presupuesto={presupuestoSeleccionado} onClose={() => setPresupuestoSeleccionado(null)} />
       )}
     </Modal>
   )

@@ -151,8 +151,13 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    # ModuloHabilitado: el Dueño puede apagarle módulos a cada empleado
+    # (core/modulos.py). Va en el default para que una vista nueva quede
+    # cubierta sin que nadie se acuerde; las vistas que declaran
+    # `permission_classes` propio lo listan a mano.
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
+        "core.permissions.ModuloHabilitado",
     ),
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",

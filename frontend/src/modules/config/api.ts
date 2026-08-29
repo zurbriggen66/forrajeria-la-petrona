@@ -44,11 +44,11 @@ export function useInvitarUsuario() {
   })
 }
 
-export function useActualizarRolUsuario() {
+export function useActualizarUsuario() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, rol }: { id: string; rol: string }) => {
-      const { data } = await api.patch<UsuarioComercio>(`/auth/usuarios/${id}/`, { rol })
+    mutationFn: async ({ id, ...cambios }: { id: string } & Partial<Pick<UsuarioComercio, 'rol' | 'modulos_bloqueados'>>) => {
+      const { data } = await api.patch<UsuarioComercio>(`/auth/usuarios/${id}/`, cambios)
       return data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['usuarios-comercio'] }),

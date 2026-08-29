@@ -190,3 +190,56 @@ class WhatsAppDesconectarTests(MultiSucursalMixin, APITestCase):
 
         response = self.client.post("/api/auth/whatsapp/desconectar/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class ModulosPorEmpleadoTests(APITestCase):
+    """El Dueño apaga módulos por empleado (Config > Usuarios)."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Forrajería (test)")
+        self.cajero = User.objects.create_user(username="cajero", password="testpass123")
+        self.relacion = UsuarioComercio.objects.create(
+            user=self.cajero, comercio=self.comercio, rol="Cajero",
+        )
+        Perfil.objects.create(user=self.cajero, comercio=self.comercio,
+                              nombre_completo="Cajero", rol="Cajero")
+        self.client.force_authenticate(user=self.cajero)
+
+    def test_sin_bloqueos_entra(self):
+        self.assertEqual(self.client.get("/api/estadisticas/contabilidad/deudas/").status_code, 200)
+
+    def test_modulo_bloqueado_devuelve_403(self):
+        self.relacion.modulos_bloqueados = ["/contabilidad"]
+        self.relacion.save(update_fields=["modulos_bloqueados"])
+        response = self.client.get("/api/estadisticas/contabilidad/deudas/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_bloquear_productos_no_rompe_el_buscador_del_pos(self):
+        """El POS lee /api/productos/ para vender: apagarle la pantalla de
+        productos a un cajero no puede dejarlo sin poder buscar qué cobrar."""
+        self.relacion.modulos_bloqueados = ["/productos"]
+        self.relacion.save(update_fields=["modulos_bloqueados"])
+        self.assertEqual(self.client.get("/api/productos/").status_code, 200)
+        self.assertEqual(self.client.get("/api/combos/").status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_el_dueno_nunca_queda_bloqueado(self):
+        self.relacion.rol = "Dueño"
+        self.relacion.modulos_bloqueados = ["/contabilidad"]
+        self.relacion.save(update_fields=["rol", "modulos_bloqueados"])
+        self.assertEqual(self.client.get("/api/estadisticas/contabilidad/deudas/").status_code, 200)
+
+    def test_me_informa_los_modulos_para_esconder_el_menu(self):
+        self.relacion.modulos_bloqueados = ["/contabilidad", "/estadisticas"]
+        self.relacion.save(update_fields=["modulos_bloqueados"])
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.data["modulos_bloqueados"], ["/contabilidad", "/estadisticas"])
+
+    def test_no_acepta_modulos_inventados(self):
+        dueno = User.objects.create_user(username="dueno2", password="testpass123")
+        UsuarioComercio.objects.create(user=dueno, comercio=self.comercio, rol="Dueño")
+        Perfil.objects.create(user=dueno, comercio=self.comercio, nombre_completo="D", rol="Dueño")
+        self.client.force_authenticate(user=dueno)
+        response = self.client.patch(
+            f"/api/auth/usuarios/{self.relacion.id}/", {"modulos_bloqueados": ["/inventado"]}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

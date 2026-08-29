@@ -9,6 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.permissions import ModuloHabilitado
+
 from clientes.models import Cliente
 from compras.models import Compra, CompraPago
 from core.mixins import resolver_comercio_activo
@@ -142,7 +144,7 @@ class ResumenView(APIView):
     """KPIs del panel de Estadísticas (Fase 4): ingresos, egresos, balance,
     margen, ticket promedio y cantidad — sobre ventas reales, con filtros."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -176,7 +178,7 @@ class ResumenView(APIView):
 class RankingsView(APIView):
     """Top productos y top vendedores del período filtrado, por ventas reales."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -223,7 +225,7 @@ class RentabilidadView(APIView):
     ventas efectivamente registradas — no de la lista de precios (eso ya
     lo cubre Inventario > Ranking rentabilidad desde la Fase 1)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -264,7 +266,7 @@ class VerdadDelNegocioView(APIView):
     """Rentabilidad real por categoría/proveedor/hora + comparativa contra el
     período inmediatamente anterior (mismo largo de rango, hacia atrás)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -378,7 +380,7 @@ class InicioView(APIView):
     misma trampa que documenta _rango_por_defecto.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -522,7 +524,7 @@ class PanelView(APIView):
     pestañas.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)

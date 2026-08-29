@@ -1,11 +1,12 @@
+import type { ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { RequireAuth } from './router/RequireAuth'
 import { ShellLayout } from './shell/ShellLayout'
 import { LoginPage } from './pages/LoginPage'
 import { ModulePlaceholder } from './modules/ModulePlaceholder'
-import { FLAT_ROUTES, NAV_ITEMS } from './router/navigation'
+import { FLAT_ROUTES, moduloBloqueado, NAV_ITEMS } from './router/navigation'
 import { MODULOS_IMPLEMENTADOS } from './router/modulos'
 import { SeccionPage } from './router/SeccionPage'
 
@@ -18,6 +19,16 @@ const RUTAS_DE_SECCION = new Set(
     ...i.children!.map((c) => c.path),
   ]),
 )
+
+/** Una ruta de un módulo apagado manda al inicio en vez de renderizar.
+ * Esconder el ítem del menú no alcanza: la URL se puede escribir a mano. */
+function RutaDeModulo({ path, children }: { path: string; children: ReactNode }) {
+  const { user } = useAuth()
+  if (moduloBloqueado(path, user?.modulos_bloqueados ?? [])) {
+    return <Navigate to="/home" replace />
+  }
+  return children
+}
 
 function App() {
   return (
@@ -41,7 +52,13 @@ function App() {
                 : Modulo
                   ? <Modulo />
                   : <ModulePlaceholder nombre={route.label} />
-              return <Route key={route.path} path={route.path} element={elemento} />
+              return (
+                <Route
+                  key={route.path}
+                  path={route.path}
+                  element={<RutaDeModulo path={route.path}>{elemento}</RutaDeModulo>}
+                />
+              )
             })}
           </Route>
 

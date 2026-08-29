@@ -2,6 +2,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Comercio, EmpleadoTurno, Perfil, UsuarioComercio
+from .modulos import CLAVES
 
 
 class ComercioSerializer(serializers.ModelSerializer):
@@ -14,10 +15,31 @@ class PerfilMeSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     username = serializers.CharField(source="user.username", read_only=True)
     comercios = serializers.SerializerMethodField()
+    modulos_bloqueados = serializers.SerializerMethodField()
 
     class Meta:
         model = Perfil
-        fields = ["id", "nombre_completo", "rol", "email", "username", "comercios"]
+        fields = ["id", "nombre_completo", "rol", "email", "username", "comercios",
+                  "modulos_bloqueados"]
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_modulos_bloqueados(self, perfil):
+        """Módulos que el Dueño le apagó a este usuario en el comercio activo.
+        El frontend los usa para no dibujar el menú ni las rutas."""
+        from .mixins import resolver_comercio_activo
+        from .models import UsuarioComercio
+
+        request = self.context.get("request")
+        if request is None:
+            return []
+        try:
+            comercio = resolver_comercio_activo(request)
+        except Exception:  # noqa: BLE001 - sin comercio resuelto no hay nada que esconder
+            return []
+        relacion = UsuarioComercio.objects.filter(user=perfil.user, comercio=comercio).first()
+        if relacion is None or relacion.rol == "Dueño":
+            return []
+        return relacion.modulos_bloqueados or []
 
     @extend_schema_field(ComercioSerializer(many=True))
     def get_comercios(self, perfil):
@@ -67,13 +89,23 @@ class UsuarioComercioSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UsuarioComercio
-        fields = ["id", "email", "nombre_completo", "rol", "created_at"]
+        fields = ["id", "email", "nombre_completo", "rol", "modulos_bloqueados", "created_at"]
         read_only_fields = ["id", "email", "nombre_completo", "created_at"]
 
     @extend_schema_field(str)
     def get_nombre_completo(self, relacion):
         perfil = Perfil.objects.filter(user=relacion.user).first()
         return perfil.nombre_completo if perfil else ""
+
+    def validate_modulos_bloqueados(self, value):
+        """Sólo claves del catálogo: un JSONField acepta cualquier cosa, y una
+        clave inventada quedaría guardada sin bloquear nada."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Tiene que ser una lista de módulos.")
+        desconocidas = [c for c in value if c not in CLAVES]
+        if desconocidas:
+            raise serializers.ValidationError(f"Módulos que no existen: {', '.join(map(str, desconocidas))}.")
+        return sorted(set(value))
 
 
 class UsuarioComercioInviteSerializer(serializers.Serializer):

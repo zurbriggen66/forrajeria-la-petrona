@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.mixins import resolver_comercio_activo
-from core.permissions import IsDueño
+from core.permissions import IsDueño, ModuloHabilitado
 from productos.models import Producto
 from productos.precios import resolver_precio_item
 
@@ -44,7 +44,7 @@ class ConsultarView(APIView):
     conversación con el asistente no es un registro del negocio.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def post(self, request):
         serializer = ConsultaSerializer(data=request.data)
@@ -159,7 +159,7 @@ class UsoView(APIView):
     """Cuánto cupo queda y cuánto se gastó — para mostrarlo en pantalla y
     para poder cotizar el servicio con consumo real, no con estimaciones."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -252,7 +252,7 @@ class ConfirmarView(APIView):
     la confirmó. Reusa exactamente los mismos caminos que la interfaz normal,
     así que valida stock, precios y caja igual que si se hubiera cargado a mano."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def post(self, request):
         serializer = ConfirmarSerializer(data=request.data)

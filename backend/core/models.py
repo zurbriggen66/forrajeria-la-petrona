@@ -78,6 +78,11 @@ class UsuarioComercio(BaseModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     comercio = models.ForeignKey(Comercio, on_delete=models.CASCADE)
     rol = models.CharField(max_length=30, default="Cajero")
+    # Módulos que el Dueño le apagó a este empleado (claves de core.modulos).
+    # Se guarda lo BLOQUEADO y no lo permitido a propósito: así los usuarios que
+    # ya existen siguen viendo todo, y un módulo nuevo aparece habilitado en vez
+    # de invisible hasta que alguien se acuerde de tildarlo.
+    modulos_bloqueados = models.JSONField(default=list, blank=True)
 
     class Meta:
         unique_together = ("user", "comercio")

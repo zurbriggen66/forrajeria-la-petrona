@@ -94,3 +94,20 @@ const RUTAS_CON_DUPLICADOS = NAV_ITEMS.flatMap((item) => [
 export const FLAT_ROUTES: { label: string; path: string }[] = [
   ...new Map(RUTAS_CON_DUPLICADOS.map((r) => [r.path, r])).values(),
 ]
+
+/** Módulos que el Dueño puede apagar por empleado (Config > Usuarios).
+ *
+ * La clave es la ruta del menú, igual que en core/modulos.py del backend, así
+ * que la misma lista sirve para esconder el ítem y para que el servidor corte
+ * la request. Inicio y Config quedan afuera a propósito: sin Inicio el
+ * empleado entra a una pantalla vacía, y en Config lo único que ve es su
+ * propia cuenta y su contraseña. */
+export const MODULOS_OPCIONALES = NAV_ITEMS.filter(
+  (i) => i.path !== '/home' && i.path !== '/config',
+)
+
+/** ¿Esta ruta cae dentro de un módulo apagado? Contempla las hijas de una
+ * sección: bloquear '/ventas' también bloquea '/ventas/historial'. */
+export function moduloBloqueado(path: string, bloqueados: string[]) {
+  return bloqueados.some((m) => path === m || path.startsWith(`${m}/`))
+}

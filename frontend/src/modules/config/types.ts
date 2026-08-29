@@ -26,6 +26,8 @@ export interface UsuarioComercio {
   email: string
   nombre_completo: string
   rol: string
+  /** Módulos que el Dueño le apagó (claves = rutas del menú). Vacío = ve todo. */
+  modulos_bloqueados: string[]
   created_at: string
 }
 

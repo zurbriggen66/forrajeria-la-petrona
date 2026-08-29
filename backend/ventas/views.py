@@ -90,8 +90,15 @@ class VentaViewSet(TenantViewSet):
         # propósito. La venta ya está cobrada y guardada; pedirle el CAE a ARCA
         # es una llamada de red que no puede hacerla fallar hacia atrás. Si no
         # sale, queda en la cola para reintentar (ver facturar_si_corresponde).
-        if facturar_si_corresponde(venta):
-            venta.refresh_from_db()
+        facturar_si_corresponde(venta)
+
+        # Se relee por el queryset del viewset (select_related + prefetch) en
+        # vez de serializar el objeto recién creado: sobre un objeto "pelado"
+        # VentaSerializer pide el producto de cada ítem y la cuenta de cada
+        # pago de a una — una venta de doce renglones eran ~16 consultas extra
+        # con el cajero esperando, ya cobrada la venta. Así son cinco fijas, y
+        # de paso trae el CAE si la facturación automática lo escribió.
+        venta = self.queryset.get(pk=venta.pk)
 
         return Response(VentaSerializer(venta).data, status=status.HTTP_201_CREATED)
 

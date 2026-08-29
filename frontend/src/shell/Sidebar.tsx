@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { NAV_ITEMS } from '../router/navigation'
+import { moduloBloqueado, NAV_ITEMS } from '../router/navigation'
 import { useAuth } from '../context/AuthContext'
 import { Brand } from '../components/Brand'
 
@@ -32,7 +32,11 @@ const CLAVE_FIJADA = 'sidebar-fijada'
  * en el flujo reservando siempre el ancho contraído. Si la barra empujara,
  * cada vez que el mouse la roza se reacomodarían las tablas de al lado. */
 export function Sidebar() {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
+  // Los módulos que el Dueño le apagó a este empleado no se dibujan. El
+  // servidor igual los rechaza (core/permissions.py::ModuloHabilitado): esto
+  // es para que no vea puertas cerradas, no para trabarlas.
+  const visibles = NAV_ITEMS.filter((i) => !moduloBloqueado(i.path, user?.modulos_bloqueados ?? []))
   const [fijada, setFijada] = useState(() => localStorage.getItem(CLAVE_FIJADA) === '1')
 
   useEffect(() => {
@@ -68,7 +72,7 @@ export function Sidebar() {
 
         <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2">
           <ul className="flex flex-col gap-1">
-            {NAV_ITEMS.map((item) => {
+            {visibles.map((item) => {
               const Icon = item.icon
               return (
                 <li key={item.label} className="w-full">

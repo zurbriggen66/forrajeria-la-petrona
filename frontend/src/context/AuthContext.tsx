@@ -17,6 +17,8 @@ interface Perfil {
   email: string
   username: string
   comercios: Comercio[]
+  /** Módulos que el Dueño le apagó a este usuario en el comercio activo. */
+  modulos_bloqueados: string[]
 }
 
 interface AuthContextValue {

@@ -53,7 +53,15 @@ class Venta(TenantModel):
     comprador_datos = models.JSONField(null=True, blank=True)
 
     class Meta:
-        indexes = [models.Index(fields=["comercio", "-created_at"])]
+        indexes = [
+            models.Index(fields=["comercio", "-created_at"]),
+            # Cada venta calcula su numero_ticket con MAX(numero_ticket) del
+            # comercio. Con sólo el índice de comercio_id eso lee todas las
+            # ventas del comercio para sacar el máximo: la venta 20.000 tarda
+            # 20.000 veces más que la primera. Con el índice compuesto es un
+            # solo salto al final del índice.
+            models.Index(fields=["comercio", "numero_ticket"]),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["comercio", "sync_uuid"],

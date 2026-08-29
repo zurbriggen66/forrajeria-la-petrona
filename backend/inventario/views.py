@@ -7,6 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.permissions import ModuloHabilitado
+
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from productos.models import Producto
 
@@ -88,7 +90,7 @@ class StockDepositoViewSet(TenantViewSet):
 class InventarioResumenView(APIView):
     """KPIs de la Fase 1: valor de stock, productos con stock bajo / sin stock."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -116,7 +118,7 @@ class RankingRentabilidadView(APIView):
     margen potencial por producto, no en rentabilidad real de ventas.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)

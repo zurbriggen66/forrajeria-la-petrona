@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Check, CircleUserRound, Download, Loader2, MessageCircle,
-  Plus, QrCode, Receipt, Sparkles, Trash2, UserRound,
+  Plus, QrCode, Receipt, SlidersHorizontal, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -15,8 +15,9 @@ import { ColaFiscal } from '../fiscal/ColaFiscal'
 import { CONDICIONES_IVA, MEDIOS_FACTURABLES } from '../fiscal/types'
 import { CuentaAsistente } from '../asistente/CuentaAsistente'
 import { InvitarUsuarioModal } from './InvitarUsuarioModal'
+import { PermisosUsuarioModal } from './PermisosUsuarioModal'
 import {
-  useActualizarRolUsuario,
+  useActualizarUsuario,
   useCambiarPassword,
   useCambiarUsuario,
   useComercioConfig,
@@ -27,7 +28,8 @@ import {
   useUpdateComercioConfig,
   useUsuariosComercio,
 } from './api'
-import { ROLES } from './types'
+import { MODULOS_OPCIONALES } from '../../router/navigation'
+import { ROLES, type UsuarioComercio } from './types'
 
 function DatosDelComercio() {
   const { toast } = useToast()
@@ -440,9 +442,10 @@ function FacturacionAutomatica() {
 function Usuarios() {
   const { toast } = useToast()
   const { data: usuarios, isLoading } = useUsuariosComercio()
-  const actualizarRol = useActualizarRolUsuario()
+  const actualizarUsuario = useActualizarUsuario()
   const quitar = useQuitarUsuario()
   const [modalAbierto, setModalAbierto] = useState(false)
+  const [permisosDe, setPermisosDe] = useState<UsuarioComercio | null>(null)
 
   async function handleQuitar(id: string) {
     try {
@@ -469,12 +472,13 @@ function Usuarios() {
                 <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-dim">Usuario</th>
                 <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-dim">Email</th>
                 <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-dim">Rol</th>
+                <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-dim">Módulos</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {(usuarios ?? []).length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-text-dim">Sin usuarios cargados.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-text-dim">Sin usuarios cargados.</td></tr>
               ) : (
                 usuarios!.map((u) => (
                   <tr key={u.id} className="border-b border-border last:border-0">
@@ -484,11 +488,24 @@ function Usuarios() {
                       <Select
                         id={`rol-${u.id}`}
                         value={u.rol}
-                        onChange={(e) => actualizarRol.mutate({ id: u.id, rol: e.target.value })}
+                        onChange={(e) => actualizarUsuario.mutate({ id: u.id, rol: e.target.value })}
                         className="py-1"
                       >
                         {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                       </Select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setPermisosDe(u)}
+                        className="flex items-center gap-1.5 text-sm text-text-dim hover:text-accent"
+                      >
+                        <SlidersHorizontal size={14} />
+                        {u.rol === 'Dueño'
+                          ? 'Todos'
+                          : u.modulos_bloqueados.length === 0
+                            ? 'Todos'
+                            : `${MODULOS_OPCIONALES.length - u.modulos_bloqueados.length} de ${MODULOS_OPCIONALES.length}`}
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleQuitar(u.id)} className="text-text-dim hover:text-danger" aria-label="Quitar usuario">
@@ -504,6 +521,7 @@ function Usuarios() {
       )}
 
       {modalAbierto && <InvitarUsuarioModal onClose={() => setModalAbierto(false)} />}
+      {permisosDe && <PermisosUsuarioModal usuario={permisosDe} onClose={() => setPermisosDe(null)} />}
     </div>
   )
 }

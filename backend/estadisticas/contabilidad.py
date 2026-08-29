@@ -22,6 +22,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.permissions import ModuloHabilitado
+
 from clientes.models import Cliente, ClienteMovimiento
 from compras.models import Compra, CompraPago
 from core.mixins import resolver_comercio_activo
@@ -96,7 +98,7 @@ def _flujo(comercio, ventas, desde, hasta):
 class ResultadoView(APIView):
     """Resultado + flujo de caja + puente entre ambos, del período filtrado."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -176,7 +178,7 @@ class ResultadoView(APIView):
 class MensualView(APIView):
     """Últimos N meses cerrados + el actual: ventas, CMV, gastos y resultado."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)
@@ -258,7 +260,7 @@ class DeudasView(APIView):
     práctica: lo que queda sin cubrir conserva la fecha de su cargo original.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)

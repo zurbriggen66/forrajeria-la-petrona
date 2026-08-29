@@ -30,12 +30,12 @@ def resolver_comercio_activo(request):
     if header_comercio_id:
         for relacion in relaciones:
             if str(relacion.comercio_id) == str(header_comercio_id):
-                comercio = relacion.comercio
+                activa = relacion
                 break
         else:
             raise PermissionDenied("El usuario no pertenece al comercio indicado en X-Comercio-Id.")
     elif len(relaciones) == 1:
-        comercio = relaciones[0].comercio
+        activa = relaciones[0]
     elif not relaciones:
         raise PermissionDenied("El usuario no está asociado a ningún comercio.")
     else:
@@ -43,7 +43,12 @@ def resolver_comercio_activo(request):
             "El usuario opera varios comercios: mandá el header X-Comercio-Id."
         )
 
+    comercio = activa.comercio
     request._comercio_activo_cache = comercio
+    # La relación se guarda aparte porque ModuloHabilitado necesita el rol y los
+    # módulos bloqueados de ESTE usuario en ESTE comercio, y así no repite la
+    # consulta que acabamos de hacer.
+    request._usuario_comercio_cache = activa
     return comercio
 
 

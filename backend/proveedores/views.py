@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 
+from core.permissions import ModuloHabilitado
+
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from productos.models import Producto
 
@@ -93,7 +95,7 @@ class PedidosSugeridosView(APIView):
     """Productos por debajo de su stock mínimo, agrupados por proveedor, con
     la cantidad sugerida para volver a ese mínimo."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
 
     def get(self, request):
         comercio = resolver_comercio_activo(request)

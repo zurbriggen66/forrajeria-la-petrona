@@ -5,6 +5,8 @@ from rest_framework import filters, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from core.permissions import ModuloHabilitado
+
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
 
@@ -39,7 +41,7 @@ class ProductoUniversalViewSet(viewsets.ReadOnlyModelViewSet):
 
     queryset = ProductoUniversal.objects.filter(activo=True).order_by("nombre")
     serializer_class = ProductoUniversalSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ModuloHabilitado]
     filterset_fields = ["codigo_barras"]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["codigo_barras", "nombre"]

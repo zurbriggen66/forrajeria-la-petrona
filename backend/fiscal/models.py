@@ -9,9 +9,11 @@ def medios_de_pago(venta):
     `metodo_pago`, que en un pago mixto dice sólo "mixto".
 
     Lo fiado no pasa por ninguna cuenta, así que se deduce aparte."""
+    # select_related: esto corre en TODA venta al cobrar (antes de decidir si
+    # se factura), y sin él cada pago pedía su cuenta por separado.
     tipos = {
         p.cuenta_pago.tipo
-        for p in venta.pagos.all()
+        for p in venta.pagos.select_related("cuenta_pago")
         if p.cuenta_pago_id and p.cuenta_pago.tipo
     }
     if venta.monto_cuenta_corriente and venta.monto_cuenta_corriente > 0:

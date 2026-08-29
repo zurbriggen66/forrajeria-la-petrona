@@ -40,7 +40,7 @@ function PedidoCard({ pedido }: { pedido: PedidoManual }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="tarjeta-viva rounded-xl border border-border bg-surface p-4">
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs text-text-dim">{formatFecha(pedido.created_at)}</span>
         <Select

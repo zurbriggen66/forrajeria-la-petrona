@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { Loader2, Plus, Trash2, UserRound } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { InputDecimal } from '../../components/ui/InputDecimal'
 import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
 import { useClientesSearch } from '../pos/api'
 import { precioProducto, tieneBolsa } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
@@ -80,10 +81,10 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
   // (ver PresupuestoViewSet._guardar), así que el subtotal en pantalla se
   // calcula igual en alta y en edición — es el mismo número que va a cobrar.
   const subtotal = items.reduce(
-    (acc, row) => acc + (row.producto ? precioProducto(row.producto, row.esBolsa) * Number(row.cantidad || 0) : 0),
+    (acc, row) => acc + (row.producto ? precioProducto(row.producto, row.esBolsa) * parseDecimal(row.cantidad) : 0),
     0,
   )
-  const total = Math.max(subtotal - Number(descuento || 0), 0)
+  const total = Math.max(subtotal - parseDecimal(descuento), 0)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -206,12 +207,12 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
                       </span>
                     )}
 
-                    <Input
-                      aria-label="Cantidad" type="number" min="0.001" step="any" value={row.cantidad}
-                      onChange={(e) => updateItem(i, { cantidad: e.target.value })}
+                    <InputDecimal
+                      aria-label="Cantidad" value={row.cantidad}
+                      onChange={(valor) => updateItem(i, { cantidad: valor })}
                     />
                     <span className="text-right text-sm tabular-nums text-text-dim">
-                      {formatMoney(precio * Number(row.cantidad || 0))}
+                      {formatMoney(precio * parseDecimal(row.cantidad))}
                     </span>
                     <button
                       type="button" onClick={() => setItems((p) => (p.length === 1 ? p : p.filter((_, idx) => idx !== i)))}
@@ -246,7 +247,7 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
           <div className="flex items-center justify-between text-sm text-text-dim">
             <span>Productos</span><span className="tabular-nums">{formatMoney(subtotal)}</span>
           </div>
-          {Number(descuento) > 0 && (
+          {parseDecimal(descuento) > 0 && (
             <div className="flex items-center justify-between text-sm text-danger">
               <span>Descuento</span><span className="tabular-nums">−{formatMoney(descuento)}</span>
             </div>

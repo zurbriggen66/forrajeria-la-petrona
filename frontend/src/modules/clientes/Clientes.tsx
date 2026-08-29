@@ -24,7 +24,7 @@ export function Clientes() {
   // Una request cuando deja de tipear, no una por tecla.
   const searchDiferido = useDebounce(search)
 
-  const { data, isLoading } = useClientes({
+  const { data, isLoading, error, refetch } = useClientes({
     search: searchDiferido || undefined,
     ...(activo === 'activos' ? { activo: true } : activo === 'inactivos' ? { activo: false } : {}),
     ...(deuda === 'todos' ? {} : { deuda }),
@@ -100,6 +100,8 @@ export function Clientes() {
             rowKey={(c) => c.id}
             emptyMessage="No hay clientes para este filtro."
             onRowClick={(c) => setSeleccionadaId(c.id)}
+            error={error}
+            onRetry={refetch}
           />
           <Paginacion
             pagina={pagina} porPagina={CLIENTES_POR_PAGINA}

@@ -3,7 +3,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { useToast } from '../../context/ToastContext'
-import { contarPendientes, listarPendientes, quitarPendiente } from './offlineQueue'
+import { extraerMensajeError } from '../../lib/errors'
+import {
+  contarPendientes, contarRechazadas, incrementarIntentos, listarPorSincronizar,
+  marcarRechazada, quitarPendiente,
+} from './offlineQueue'
 import type { VentaResult } from './types'
 
 /** Sincroniza la cola offline del POS: al montar, al reconectar, y cada
@@ -11,19 +15,21 @@ import type { VentaResult } from './types'
 export function useOfflineSync() {
   const [online, setOnline] = useState(navigator.onLine)
   const [pendientes, setPendientes] = useState(0)
+  const [rechazadas, setRechazadas] = useState(0)
   const [sincronizando, setSincronizando] = useState(false)
   const { toast } = useToast()
   const queryClient = useQueryClient()
 
   const refrescarContador = useCallback(() => {
     contarPendientes().then(setPendientes)
+    contarRechazadas().then(setRechazadas)
   }, [])
 
   const sincronizar = useCallback(async () => {
     if (!navigator.onLine || sincronizando) return
     setSincronizando(true)
     try {
-      const pendientes = await listarPendientes()
+      const pendientes = await listarPorSincronizar()
       for (const item of pendientes) {
         try {
           const { data } = await api.post<VentaResult>('/ventas/', item.payload)
@@ -33,10 +39,13 @@ export function useOfflineSync() {
           queryClient.invalidateQueries({ queryKey: ['inventario-resumen'] })
         } catch (err) {
           if (axios.isAxiosError(err) && err.response) {
-            // El servidor la rechazó (ej. se quedó sin stock mientras estaba offline):
-            // no tiene sentido seguir reintentando esta venta puntual.
-            await quitarPendiente(item.sync_uuid)
-            toast('Una venta offline no se pudo sincronizar y se descartó — revisala.', 'error')
+            // El servidor la rechazó (ej. se quedó sin stock mientras estaba
+            // offline). NO se borra: queda marcada con el motivo para que el
+            // cajero la vea y decida (ver VentasPendientesModal). Antes se
+            // descartaba acá y sólo quedaba un toast de 4 segundos.
+            await incrementarIntentos(item.sync_uuid)
+            await marcarRechazada(item.sync_uuid, extraerMensajeError(err, 'El servidor rechazó la venta'))
+            toast('Una venta offline fue rechazada — quedó guardada para que la revises.', 'error')
           } else {
             break // seguimos sin conexión real: cortamos y probamos más tarde
           }
@@ -71,5 +80,5 @@ export function useOfflineSync() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { online, pendientes, sincronizando, refrescarContador }
+  return { online, pendientes, rechazadas, sincronizando, sincronizar, refrescarContador }
 }

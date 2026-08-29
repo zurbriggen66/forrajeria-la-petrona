@@ -24,7 +24,7 @@ export function HistorialVentas() {
     ...(estado === 'activas' ? { anulada: false } : estado === 'anuladas' ? { anulada: true } : {}),
     page: pagina,
   }
-  const { data, isLoading } = useVentas(filtrosConEstado)
+  const { data, isLoading, error, refetch } = useVentas(filtrosConEstado)
 
   /** Al cambiar un filtro hay que volver a la página 1: la página actual
    * puede no existir en el resultado filtrado. */
@@ -69,6 +69,8 @@ export function HistorialVentas() {
             rowKey={(v) => v.id}
             emptyMessage="No hay ventas para estos filtros."
             onRowClick={setSeleccionada}
+            error={error}
+            onRetry={refetch}
           />
           <Paginacion
             pagina={pagina} porPagina={VENTAS_POR_PAGINA}

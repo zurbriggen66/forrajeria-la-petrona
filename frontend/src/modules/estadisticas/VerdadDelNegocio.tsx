@@ -83,7 +83,7 @@ function ComparativaCard({ data }: { data: Comparativa }) {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <KpiCard label="Ingresos período actual" value={formatMoney(data.periodo_actual.ingresos)} accent="accent-2" />
         <KpiCard label="Ingresos período anterior" value={formatMoney(data.periodo_anterior.ingresos)} />
-        <div className="group relative overflow-hidden rounded-xl border border-border bg-surface p-4">
+        <div className="tarjeta-viva group relative overflow-hidden rounded-xl border border-border bg-surface p-4">
           <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Variación</span>
           <div className={`mt-2 flex items-center gap-2 font-display text-2xl font-semibold tabular-nums ${color}`}>
             <Icono size={20} />

@@ -49,7 +49,7 @@ function hoyISO() {
 
 export function Compras() {
   const [filtros, setFiltros] = useState<CompraFiltros>({})
-  const { data: compras, isLoading } = useCompras(filtros)
+  const { data: compras, isLoading, error, refetch } = useCompras(filtros)
   const [showForm, setShowForm] = useState(false)
   const [seleccionada, setSeleccionada] = useState<Compra | null>(null)
   const [aPagar, setAPagar] = useState<Compra | null>(null)
@@ -121,6 +121,8 @@ export function Compras() {
           rowKey={(c) => c.id}
           emptyMessage="No hay compras para estos filtros."
           onRowClick={setSeleccionada}
+          error={error}
+          onRetry={refetch}
         />
       )}
 

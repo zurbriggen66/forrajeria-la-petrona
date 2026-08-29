@@ -100,14 +100,15 @@ class VentaPago(BaseModel):
 
 class Presupuesto(TenantModel):
     """Cotización para un cliente: qué se le ofrece y a qué precio, sin mover
-    stock ni caja todavía — eso pasa recién si el cliente acepta y se carga
-    la venta en el POS (mismo criterio que Reparto)."""
+    stock ni caja todavía — eso pasa recién si el cliente acepta y se cobra
+    (ver PresupuestoViewSet.estado, que linkea la Venta resultante acá)."""
 
     ESTADOS = [
         ("pendiente", "pendiente"),
         ("aprobado", "aprobado"),
         ("rechazado", "rechazado"),
         ("vencido", "vencido"),
+        ("cobrado", "cobrado"),
     ]
 
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True)
@@ -120,6 +121,10 @@ class Presupuesto(TenantModel):
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     descuento = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # Seteado por PresupuestoViewSet.estado al cobrar: la venta real que se
+    # generó a partir de este presupuesto, para poder ir de uno al otro y
+    # para que las estadísticas (que sólo miran Venta) vean esta plata.
+    venta = models.ForeignKey(Venta, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["comercio", "-created_at"])]

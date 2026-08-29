@@ -3,6 +3,7 @@ import {
   Check, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { HojaReparto, HojaRutaDelDia } from './HojaReparto'
 import { Input } from '../../components/ui/Input'
 import { KpiCard } from '../../components/ui/KpiCard'
@@ -47,7 +48,7 @@ function TarjetaReparto({
   const siguiente = SIGUIENTE[reparto.estado]
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/40">
+    <div className="tarjeta-viva flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -130,6 +131,7 @@ export function Repartos() {
   const [filtros, setFiltros] = useState<RepartoFiltros>({})
   const [busqueda, setBusqueda] = useState('')
   const [modal, setModal] = useState<'nuevo' | Reparto | null>(null)
+  const [aEliminar, setAEliminar] = useState<Reparto | null>(null)
   // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
   // .hoja-impresion, así que tener varias montadas saldría todo junto.
   const [aImprimir, setAImprimir] = useState<Reparto | 'ruta' | null>(null)
@@ -166,12 +168,13 @@ export function Repartos() {
   }
 
   async function handleEliminar(reparto: Reparto) {
-    if (!window.confirm(`¿Eliminar el reparto de "${reparto.cliente_nombre}" a ${reparto.destino}?`)) return
     try {
       await eliminar.mutateAsync(reparto.id)
       toast('Reparto eliminado')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo eliminar el reparto'), 'error')
+    } finally {
+      setAEliminar(null)
     }
   }
 
@@ -245,7 +248,7 @@ export function Repartos() {
               onImprimir={() => setAImprimir(r)}
               onEditar={() => setModal(r)}
               onCambiarEstado={(estado) => handleCambiarEstado(r, estado)}
-              onEliminar={() => handleEliminar(r)}
+              onEliminar={() => setAEliminar(r)}
             />
           ))}
         </div>
@@ -261,6 +264,17 @@ export function Repartos() {
         <HojaRutaDelDia repartos={activos} fecha={activos[0]?.fecha ?? new Date().toISOString().slice(0, 10)} />
       )}
       {aImprimir && aImprimir !== 'ruta' && <HojaReparto reparto={aImprimir} />}
+
+      {aEliminar && (
+        <ConfirmDialog
+          titulo="Eliminar reparto"
+          descripcion={`Se va a borrar el reparto de "${aEliminar.cliente_nombre}" a ${aEliminar.destino}. No se puede deshacer.`}
+          confirmarTexto="Eliminar" peligro
+          cargando={eliminar.isPending}
+          onConfirmar={() => handleEliminar(aEliminar)}
+          onCancelar={() => setAEliminar(null)}
+        />
+      )}
 
       {modal && (
         <RepartoFormModal

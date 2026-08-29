@@ -5,11 +5,12 @@ export interface Paginated<T> {
   results: T[]
 }
 
-export type EstadoPresupuesto = 'pendiente' | 'aprobado' | 'rechazado' | 'vencido'
+export type EstadoPresupuesto = 'pendiente' | 'aprobado' | 'rechazado' | 'vencido' | 'cobrado'
 
 export const ESTADOS: { value: EstadoPresupuesto; label: string }[] = [
   { value: 'pendiente', label: 'Pendiente' },
   { value: 'aprobado', label: 'Aprobado' },
+  { value: 'cobrado', label: 'Cobrado' },
   { value: 'rechazado', label: 'Rechazado' },
   { value: 'vencido', label: 'Vencido' },
 ]
@@ -48,6 +49,10 @@ export interface Presupuesto {
   total: string
   items: PresupuestoItem[]
   created_at: string
+  // Seteados al cobrar (ver PresupuestoCobrarModal) — la venta real que se
+  // generó a partir de este presupuesto.
+  venta: string | null
+  venta_numero_ticket: number | null
 }
 
 export interface PresupuestoItemInput {

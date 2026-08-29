@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Loader2, TrendingUp } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
+import { formatMoney } from '../../lib/format'
 import { useAplicarAjuste, useCategorias, useProveedores } from './api'
 
 export function Aumentos() {
@@ -19,9 +21,17 @@ export function Aumentos() {
   const [categoria, setCategoria] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [resultado, setResultado] = useState<number | null>(null)
+  const [confirmando, setConfirmando] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
+  // El submit sólo abre la confirmación: es la única acción del sistema que
+  // reescribe el precio de venta de todo un filtro de una, y su propio aviso
+  // dice que no se puede deshacer.
+  function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    setConfirmando(true)
+  }
+
+  async function aplicarAumento() {
     setResultado(null)
     try {
       const res = await aplicar.mutateAsync({
@@ -37,6 +47,8 @@ export function Aumentos() {
       setValor('')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo aplicar el aumento'), 'error')
+    } finally {
+      setConfirmando(false)
     }
   }
 
@@ -87,6 +99,22 @@ export function Aumentos() {
           </p>
         )}
       </form>
+
+      {confirmando && (
+        <ConfirmDialog
+          titulo="Aplicar aumento masivo"
+          descripcion={
+            `Se va a cambiar el precio de venta de todos los productos activos que coincidan con el filtro `
+            + `(${categoria || 'todas las categorías'}, ${proveedor ? 'un proveedor' : 'todos los proveedores'}), `
+            + `${tipo === 'porcentaje' ? `un ${valor || 0}%` : `${formatMoney(valor || 0)}`}. `
+            + `No se puede deshacer, pero queda registrado en el historial.`
+          }
+          confirmarTexto="Aplicar aumento" peligro
+          cargando={aplicar.isPending}
+          onConfirmar={aplicarAumento}
+          onCancelar={() => setConfirmando(false)}
+        />
+      )}
     </div>
   )
 }

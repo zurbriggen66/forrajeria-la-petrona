@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { AlertTriangle, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Pencil, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Paginacion } from '../../components/ui/Paginacion'
@@ -20,10 +21,11 @@ export function ProductosListado() {
   const [categoria, setCategoria] = useState('')
   const [pagina, setPagina] = useState(1)
   const [modal, setModal] = useState<'new' | Producto | null>(null)
+  const [aEliminar, setAEliminar] = useState<Producto | null>(null)
 
   const searchDiferido = useDebounce(search)
   const { data: categorias } = useCategorias()
-  const { data, isLoading, isError } = useProductos({
+  const { data, isLoading, isError, refetch } = useProductos({
     search: searchDiferido || undefined,
     categoria: categoria || undefined,
     activo: true,
@@ -40,12 +42,13 @@ export function ProductosListado() {
   }
 
   async function handleEliminar(p: Producto) {
-    if (!window.confirm(`¿Eliminar "${p.nombre}"? Si ya tiene ventas registradas, se va a desactivar en vez de borrarse.`)) return
     try {
       await eliminar.mutateAsync(p.id)
       toast('Producto eliminado')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo eliminar el producto'), 'error')
+    } finally {
+      setAEliminar(null)
     }
   }
 
@@ -80,7 +83,7 @@ export function ProductosListado() {
           <button onClick={() => setModal(p)} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar ${p.nombre}`}>
             <Pencil size={15} />
           </button>
-          <button onClick={() => handleEliminar(p)} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar ${p.nombre}`}>
+          <button onClick={() => setAEliminar(p)} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar ${p.nombre}`}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -114,9 +117,12 @@ export function ProductosListado() {
       )}
 
       {isError && (
-        <div className="flex flex-col items-center gap-2 py-16 text-danger">
+        <div className="flex flex-col items-center gap-3 py-16 text-danger">
           <AlertTriangle size={20} />
-          <span>No se pudieron cargar los productos. Probá de nuevo.</span>
+          <span>No se pudieron cargar los productos.</span>
+          <Button variant="secondary" onClick={() => refetch()}>
+            <RefreshCcw size={14} /> Reintentar
+          </Button>
         </div>
       )}
 
@@ -132,6 +138,17 @@ export function ProductosListado() {
             pagina={pagina} porPagina={PRODUCTOS_POR_PAGINA} total={data.count} onCambiar={setPagina}
           />
         </>
+      )}
+
+      {aEliminar && (
+        <ConfirmDialog
+          titulo={`Eliminar "${aEliminar.nombre}"`}
+          descripcion="Si el producto ya tiene ventas registradas se va a desactivar en vez de borrarse, para no romper el historial."
+          confirmarTexto="Eliminar" peligro
+          cargando={eliminar.isPending}
+          onConfirmar={() => handleEliminar(aEliminar)}
+          onCancelar={() => setAEliminar(null)}
+        />
       )}
 
       {modal && (

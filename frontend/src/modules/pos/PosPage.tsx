@@ -8,11 +8,13 @@ import { useCajaActual } from '../caja/api'
 import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
+import { parseDecimal } from '../../lib/format'
 import { cantidadInputId, subtotalLinea } from './precio'
 import { PosStats } from './PosStats'
 import { ProductSearch } from './ProductSearch'
 import { QuickProducts } from './QuickProducts'
 import { TicketModal, type TicketData } from './TicketModal'
+import { VentasPendientesModal } from './VentasPendientesModal'
 import { useCatalogoPOS } from './useCatalogoPOS'
 import { useOfflineSync } from './useOfflineSync'
 import type { CartItem } from './types'
@@ -20,7 +22,7 @@ import type { Producto } from '../productos/types'
 
 export function PosPage() {
   const { productos, loading: cargandoCatalogo, desdeCache } = useCatalogoPOS()
-  const { online, pendientes, sincronizando } = useOfflineSync()
+  const { online, pendientes, rechazadas, sincronizando, sincronizar } = useOfflineSync()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   // Sin conexión no podemos confirmar el estado de la caja: no bloqueamos el
@@ -34,6 +36,7 @@ export function PosPage() {
   // pasamos el foco a su campo de peso — si no, queda cargado con "1" (kg
   // asumidos) y nada le avisa al cajero que tiene que pesarlo y corregirlo.
   const [enfocarPeso, setEnfocarPeso] = useState<string | null>(null)
+  const [verPendientes, setVerPendientes] = useState(false)
 
   const subtotal = useMemo(
     () => cart.reduce((acc, item) => acc + subtotalLinea(item), 0),
@@ -55,7 +58,7 @@ export function PosPage() {
         const paso = esBolsa ? 1 : producto.venta_por_peso ? 0.1 : 1
         return prev.map((i) =>
           i.producto.id === producto.id && i.esBolsa === esBolsa
-            ? { ...i, cantidad: String(Number(i.cantidad) + paso) }
+            ? { ...i, cantidad: String(parseDecimal(i.cantidad) + paso) }
             : i,
         )
       }
@@ -90,7 +93,7 @@ export function PosPage() {
     if (cart.length === 0) return
     setCobrando(true)
     try {
-      const total = Math.max(subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0), 0)
+      const total = Math.max(subtotal - parseDecimal(datos.descuento) + parseDecimal(datos.recargoMonto), 0)
       const resultado = await crearVenta({
         items: cart.map((i) => ({
           producto: i.producto.id,
@@ -107,13 +110,13 @@ export function PosPage() {
         vuelto_cuenta_pago: datos.vueltoCuentaPagoId || null,
         descuento: datos.descuento,
         recargo_monto: datos.recargoMonto,
-      })
+      }, total)
 
       if (resultado.status === 'ok') {
         setTicket({ kind: 'ok', venta: resultado.venta })
         queryClient.invalidateQueries({ queryKey: ['estadisticas', 'resumen'] })
       } else {
-        setTicket({ kind: 'queued', items: cart, total: subtotal - Number(datos.descuento || 0) + Number(datos.recargoMonto || 0) })
+        setTicket({ kind: 'queued', items: cart, total: subtotal - parseDecimal(datos.descuento) + parseDecimal(datos.recargoMonto) })
       }
       setCart([])
     } catch (err) {
@@ -144,11 +147,18 @@ export function PosPage() {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      {(!online || pendientes > 0) && (
-        <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+      {(!online || pendientes > 0 || rechazadas > 0) && (
+        <div className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+          rechazadas > 0 ? 'border-danger/40 bg-danger/10 text-danger' : 'border-warning/30 bg-warning/10 text-warning'
+        }`}>
           {sincronizando ? <Loader2 size={15} className="animate-spin" /> : online ? <RefreshCcw size={15} /> : <CloudOff size={15} />}
           {!online && 'Sin conexión — el POS sigue funcionando y se sincroniza al reconectar. '}
           {pendientes > 0 && `${pendientes} venta${pendientes === 1 ? '' : 's'} offline pendiente${pendientes === 1 ? '' : 's'} de sincronizar.`}
+          {rechazadas > 0 && ` ${rechazadas} rechazada${rechazadas === 1 ? '' : 's'} esperando que la revises.`}
+          {/* Clickeable: el contador solo no dice CUÁL venta ni de cuánto era. */}
+          <button onClick={() => setVerPendientes(true)} className="ml-auto shrink-0 underline hover:no-underline">
+            Ver detalle
+          </button>
         </div>
       )}
 
@@ -160,8 +170,11 @@ export function PosPage() {
 
       <PosStats />
 
-      <div className="flex flex-1 gap-4 overflow-hidden">
-        <div className="flex flex-1 flex-col gap-3 overflow-hidden">
+      {/* En vertical (tablet) el cobro cae abajo del carrito: con el panel de
+          320px fijos al costado, el carrito se quedaba con ~300px y su tabla
+          scrolleaba horizontal para ver el subtotal. */}
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="flex flex-1 flex-col gap-3 lg:overflow-hidden">
           <ProductSearch productos={productos} onAgregar={agregarProducto} />
           <QuickProducts productos={productos} onAgregar={agregarProducto} />
           <Cart
@@ -182,6 +195,14 @@ export function PosPage() {
       </div>
 
       {ticket && <TicketModal data={ticket} onNuevaVenta={() => setTicket(null)} />}
+
+      {verPendientes && (
+        <VentasPendientesModal
+          onClose={() => setVerPendientes(false)}
+          onSincronizar={sincronizar}
+          sincronizando={sincronizando}
+        />
+      )}
     </div>
   )
 }

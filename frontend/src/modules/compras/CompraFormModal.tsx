@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Loader2, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { InputDecimal } from '../../components/ui/InputDecimal'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
 import { ProductoFormModal } from '../productos/ProductoFormModal'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
@@ -50,13 +51,13 @@ function CostoUnitarioInput({ row, onChange }: { row: Row; onChange: (costo_unit
   // en el de antes (mismo criterio que MontoOPorcentaje en el POS).
   useEffect(() => {
     if (modo !== 'total') return
-    const cantidad = Number(row.cantidad) || 0
-    const costo = cantidad > 0 ? (Number(totalTexto) || 0) / cantidad : 0
+    const cantidad = parseDecimal(row.cantidad)
+    const costo = cantidad > 0 ? parseDecimal(totalTexto) / cantidad : 0
     onChangeRef.current(costo.toFixed(4))
   }, [modo, totalTexto, row.cantidad])
 
   function activarModoTotal() {
-    const total = Number(row.cantidad || 0) * Number(row.costo_unitario || 0)
+    const total = parseDecimal(row.cantidad) * parseDecimal(row.costo_unitario)
     setTotalTexto(total > 0 ? String(Math.round(total * 100) / 100) : '')
     setModo('total')
   }
@@ -64,15 +65,12 @@ function CostoUnitarioInput({ row, onChange }: { row: Row; onChange: (costo_unit
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1">
-        <input
+        <InputDecimal
           aria-label={modo === 'unitario' ? 'Costo unitario' : 'Total pagado por esta línea'}
-          type="number" min="0" step={modo === 'unitario' ? '0.01' : 'any'} placeholder="0"
-          onFocus={(e) => e.target.select()}
+          placeholder="0"
           value={modo === 'unitario' ? row.costo_unitario : totalTexto}
-          onChange={(e) => (
-            modo === 'unitario' ? onChange(e.target.value) : setTotalTexto(e.target.value)
-          )}
-          className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+          onChange={(valor) => (modo === 'unitario' ? onChange(valor) : setTotalTexto(valor))}
+          className="w-full !px-2 !py-2 text-right tabular-nums"
         />
       </div>
       <div className="flex gap-1">
@@ -135,7 +133,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
     setItems((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)))
   }
 
-  const total = items.reduce((acc, i) => acc + Number(i.cantidad || 0) * Number(i.costo_unitario || 0), 0)
+  const total = items.reduce((acc, i) => acc + parseDecimal(i.cantidad) * parseDecimal(i.costo_unitario), 0)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -190,7 +188,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex flex-col gap-2">
             {items.map((row, i) => {
-              const subtotal = Number(row.cantidad || 0) * Number(row.costo_unitario || 0)
+              const subtotal = parseDecimal(row.cantidad) * parseDecimal(row.costo_unitario)
               return (
                 <div key={i} className="grid grid-cols-[1fr_90px_150px_110px_28px] items-center gap-2">
                   <div>
@@ -204,9 +202,9 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
                       </button>
                     )}
                   </div>
-                  <Input
-                    aria-label="Cantidad" type="number" min="0.001" step="any" value={row.cantidad}
-                    onChange={(e) => updateItem(i, { cantidad: e.target.value })}
+                  <InputDecimal
+                    aria-label="Cantidad" value={row.cantidad}
+                    onChange={(valor) => updateItem(i, { cantidad: valor })}
                   />
                   <CostoUnitarioInput row={row} onChange={(costo_unitario) => updateItem(i, { costo_unitario })} />
                   <span className="text-right text-sm tabular-nums text-text-dim">{formatMoney(subtotal)}</span>

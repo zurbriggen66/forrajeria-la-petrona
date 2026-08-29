@@ -37,6 +37,11 @@ class PresupuestoWriteSerializer(serializers.Serializer):
 
 class PresupuestoEstadoSerializer(serializers.Serializer):
     estado = serializers.ChoiceField(choices=[e[0] for e in Presupuesto.ESTADOS])
+    # Sólo lo manda el frontend al cobrar (ver PresupuestoCobrarModal): la
+    # Venta ya se creó por la vía normal de siempre (POST /ventas/, con su
+    # propia validación completa); esto sólo linkea el id para que el
+    # presupuesto sepa en qué venta terminó.
+    venta = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class PresupuestoItemSerializer(serializers.ModelSerializer):
@@ -74,10 +79,12 @@ class PresupuestoItemSerializer(serializers.ModelSerializer):
 class PresupuestoSerializer(serializers.ModelSerializer):
     items = PresupuestoItemSerializer(many=True, read_only=True)
     cliente_registrado_nombre = serializers.CharField(source="cliente.nombre", read_only=True, default=None)
+    venta_numero_ticket = serializers.IntegerField(source="venta.numero_ticket", read_only=True, default=None)
 
     class Meta:
         model = Presupuesto
         fields = [
             "id", "cliente", "cliente_registrado_nombre", "cliente_nombre", "numero",
             "notas", "estado", "validez", "subtotal", "descuento", "total", "items", "created_at",
+            "venta", "venta_numero_ticket",
         ]

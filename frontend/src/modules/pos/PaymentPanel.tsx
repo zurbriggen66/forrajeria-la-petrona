@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, List, Loader2, Plus, UserRound, Wallet, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { InputDecimal } from '../../components/ui/InputDecimal'
 import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Select } from '../../components/ui/Select'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
 import { useClientesSearch, useCuentasPago } from './api'
 import { ClienteSelectorModal } from './ClienteSelectorModal'
 import type { Cliente } from './types'
@@ -57,9 +58,12 @@ interface Props {
   cobrando: boolean
   disabled: boolean
   onCobrar: (datos: DatosCobro) => void
+  /** Precarga el cliente (ej. al cobrar un presupuesto ya vinculado a uno) —
+   * se puede seguir cambiando o quitando desde acá como cualquier otro. */
+  clienteInicial?: Cliente | null
 }
 
-export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) {
+export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar, clienteInicial = null }: Props) {
   const { data: cuentas } = useCuentasPago()
   const [cuentaPagoId, setCuentaPagoId] = useState('')
   const [descuento, setDescuento] = useState('0')
@@ -68,20 +72,27 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
   const [vueltoCuentaPagoId, setVueltoCuentaPagoId] = useState('')
   const [pagos, setPagos] = useState<LineaPago[]>([])
   const [busquedaCliente, setBusquedaCliente] = useState('')
-  const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [cliente, setCliente] = useState<Cliente | null>(clienteInicial)
   const [mostrarSelector, setMostrarSelector] = useState(false)
   const { data: clientesEncontrados } = useClientesSearch(busquedaCliente)
+
+  // clienteInicial suele llegar async (ver PresupuestoCobrarModal, que lo
+  // busca por id después del primer render) — el useState de arriba sólo
+  // captura el valor que tenía al montar.
+  useEffect(() => {
+    if (clienteInicial) setCliente(clienteInicial)
+  }, [clienteInicial])
 
   const esCuentaCorriente = cuentaPagoId === CUENTA_CORRIENTE
   const esMixto = cuentaPagoId === MIXTO
   const cuentaSeleccionada = cuentas?.find((c) => c.id === cuentaPagoId)
   const esEfectivo = !esCuentaCorriente && !esMixto && (!cuentaSeleccionada || cuentaSeleccionada.tipo === 'efectivo')
 
-  const total = Math.max(subtotal - Number(descuento || 0) + Number(recargoMonto || 0), 0)
-  const vuelto = esEfectivo && efectivoRecibido ? Math.max(Number(efectivoRecibido) - total, 0) : null
+  const total = Math.max(subtotal - parseDecimal(descuento) + parseDecimal(recargoMonto), 0)
+  const vuelto = esEfectivo && efectivoRecibido ? Math.max(parseDecimal(efectivoRecibido) - total, 0) : null
   const disponibleCredito = cliente ? Number(cliente.limite_credito) - Number(cliente.saldo_actual) : null
 
-  const sumaPagos = aCentavos(pagos.reduce((acc, p) => acc + Number(p.monto || 0), 0))
+  const sumaPagos = aCentavos(pagos.reduce((acc, p) => acc + parseDecimal(p.monto), 0))
   const restante = aCentavos(total - sumaPagos)
   const mixtoCuadra = esMixto && restante === 0 && pagos.length > 0
 
@@ -112,7 +123,7 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
   }
 
   return (
-    <div className="flex w-80 shrink-0 flex-col gap-4 border-l border-border bg-surface p-4">
+    <div className="flex w-full shrink-0 flex-col gap-4 border-t border-border bg-surface p-4 lg:w-80 lg:border-l lg:border-t-0">
       <div>
         <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Cliente</span>
         {cliente ? (
@@ -192,12 +203,12 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
                 {(cuentas?.length ?? 0) === 0 && <option value="">Efectivo</option>}
                 {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </Select>
-              <Input
+              <InputDecimal
                 id={`pago-monto-${i}`}
                 aria-label={`Monto en ${nombreCuenta(linea.cuentaId)}`}
-                type="number" min="0" step="0.01" value={linea.monto}
-                onChange={(e) => setPagos((prev) => prev.map((p, idx) => (idx === i ? { ...p, monto: e.target.value } : p)))}
-                className="py-1.5 text-right text-xs"
+                value={linea.monto}
+                onChange={(valor) => setPagos((prev) => prev.map((p, idx) => (idx === i ? { ...p, monto: valor } : p)))}
+                className="!py-2 text-right text-xs"
               />
               <button
                 type="button"
@@ -234,9 +245,9 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
 
       {esEfectivo && (
         <div className="flex flex-col gap-1.5">
-          <Input
-            id="efectivo-recibido" label="Efectivo recibido" type="number" min="0" step="0.01"
-            value={efectivoRecibido} onChange={(e) => setEfectivoRecibido(e.target.value)}
+          <InputDecimal
+            id="efectivo-recibido" label="Efectivo recibido"
+            value={efectivoRecibido} onChange={setEfectivoRecibido}
           />
           {total > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -281,12 +292,12 @@ export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar }: Props) 
           <div className="flex items-center justify-between text-sm text-text-dim">
             <span>Subtotal</span><span className="tabular-nums">{formatMoney(subtotal)}</span>
           </div>
-          {Number(descuento) > 0 && (
+          {parseDecimal(descuento) > 0 && (
             <div className="flex items-center justify-between text-sm text-danger">
               <span>Descuento</span><span className="tabular-nums">−{formatMoney(descuento)}</span>
             </div>
           )}
-          {Number(recargoMonto) > 0 && (
+          {parseDecimal(recargoMonto) > 0 && (
             <div className="flex items-center justify-between text-sm text-warning">
               <span>Recargo</span><span className="tabular-nums">+{formatMoney(recargoMonto)}</span>
             </div>

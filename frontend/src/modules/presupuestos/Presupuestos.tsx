@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
-  Check, Clock, FileText, Loader2, Package, Pencil, Plus, Printer, Search, Trash2, UserRound, X,
+  Check, Clock, DollarSign, FileText, Loader2, Package, Pencil, Plus, Printer, Search, Trash2, UserRound, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Input } from '../../components/ui/Input'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { useToast } from '../../context/ToastContext'
@@ -10,6 +11,7 @@ import { extraerMensajeError } from '../../lib/errors'
 import { formatFechaSola, formatMoney } from '../../lib/format'
 import { imprimir } from '../../lib/imprimir'
 import { HojaPresupuesto } from './HojaPresupuesto'
+import { PresupuestoCobrarModal } from './PresupuestoCobrarModal'
 import { PresupuestoFormModal } from './PresupuestoFormModal'
 import { useCambiarEstadoPresupuesto, useDeletePresupuesto, usePresupuestos } from './api'
 import { ESTADOS, type EstadoPresupuesto, type Presupuesto, type PresupuestoFiltros } from './types'
@@ -17,6 +19,7 @@ import { ESTADOS, type EstadoPresupuesto, type Presupuesto, type PresupuestoFilt
 const ESTILO_ESTADO: Record<EstadoPresupuesto, string> = {
   pendiente: 'border-warning/40 bg-warning/10 text-warning',
   aprobado: 'border-accent-2/40 bg-accent-2/10 text-accent-2',
+  cobrado: 'border-accent/40 bg-accent/10 text-accent',
   rechazado: 'border-danger/40 bg-danger/10 text-danger',
   vencido: 'border-border bg-surface-2 text-text-dim',
 }
@@ -24,23 +27,26 @@ const ESTILO_ESTADO: Record<EstadoPresupuesto, string> = {
 const LABEL_ESTADO: Record<EstadoPresupuesto, string> = {
   pendiente: 'Pendiente',
   aprobado: 'Aprobado',
+  cobrado: 'Cobrado',
   rechazado: 'Rechazado',
   vencido: 'Vencido',
 }
 
 function TarjetaPresupuesto({
-  presupuesto, onEditar, onImprimir, onCambiarEstado, onEliminar,
+  presupuesto, onEditar, onImprimir, onCambiarEstado, onCobrar, onEliminar,
 }: {
   presupuesto: Presupuesto
   onEditar: () => void
   onImprimir: () => void
   onCambiarEstado: (estado: EstadoPresupuesto) => void
+  onCobrar: () => void
   onEliminar: () => void
 }) {
   const editable = presupuesto.estado === 'pendiente'
+  const cobrable = presupuesto.estado === 'aprobado'
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent/40">
+    <div className="tarjeta-viva flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -93,6 +99,12 @@ function TarjetaPresupuesto({
 
       {presupuesto.notas && <p className="text-xs italic text-text-dim">“{presupuesto.notas}”</p>}
 
+      {presupuesto.estado === 'cobrado' && presupuesto.venta_numero_ticket && (
+        <p className="flex items-center gap-1.5 text-xs text-accent">
+          <Check size={12} /> Cobrado — ticket #{presupuesto.venta_numero_ticket}
+        </p>
+      )}
+
       <div className="flex items-center gap-2">
         {editable && (
           <>
@@ -103,6 +115,11 @@ function TarjetaPresupuesto({
               <X size={13} /> Rechazar
             </Button>
           </>
+        )}
+        {cobrable && (
+          <Button onClick={onCobrar} className="!px-3 !py-1.5 text-xs">
+            <DollarSign size={13} /> Cobrar
+          </Button>
         )}
         <div className="ml-auto flex items-center gap-1">
           <button onClick={onImprimir} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir presupuesto de ${presupuesto.cliente_nombre}`}>
@@ -125,6 +142,8 @@ export function Presupuestos() {
   const [filtros, setFiltros] = useState<PresupuestoFiltros>({})
   const [busqueda, setBusqueda] = useState('')
   const [modal, setModal] = useState<'nuevo' | Presupuesto | null>(null)
+  const [aCobrar, setACobrar] = useState<Presupuesto | null>(null)
+  const [aEliminar, setAEliminar] = useState<Presupuesto | null>(null)
   // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
   // .hoja-impresion, así que tener varias montadas saldría todo junto.
   const [aImprimir, setAImprimir] = useState<Presupuesto | null>(null)
@@ -160,12 +179,13 @@ export function Presupuestos() {
   }
 
   async function handleEliminar(presupuesto: Presupuesto) {
-    if (!window.confirm(`¿Eliminar el presupuesto de "${presupuesto.cliente_nombre}"?`)) return
     try {
       await eliminar.mutateAsync(presupuesto.id)
       toast('Presupuesto eliminado')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo eliminar el presupuesto'), 'error')
+    } finally {
+      setAEliminar(null)
     }
   }
 
@@ -231,15 +251,16 @@ export function Presupuestos() {
               onEditar={() => setModal(p)}
               onImprimir={() => setAImprimir(p)}
               onCambiarEstado={(estado) => handleCambiarEstado(p, estado)}
-              onEliminar={() => handleEliminar(p)}
+              onCobrar={() => setACobrar(p)}
+              onEliminar={() => setAEliminar(p)}
             />
           ))}
         </div>
       )}
 
       <p className="text-xs text-text-dim">
-        Los presupuestos no descuentan stock ni entran a la caja: son una cotización. La venta se
-        registra en el POS cuando el cliente acepta.
+        Los presupuestos no descuentan stock ni entran a la caja: son una cotización. Cuando el
+        cliente acepta, "Cobrar" arma la venta con los mismos ítems y la registra de verdad.
       </p>
 
       {aImprimir && <HojaPresupuesto presupuesto={aImprimir} />}
@@ -248,6 +269,25 @@ export function Presupuestos() {
         <PresupuestoFormModal
           presupuesto={modal === 'nuevo' ? undefined : modal}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {aEliminar && (
+        <ConfirmDialog
+          titulo="Eliminar presupuesto"
+          descripcion={`Se va a borrar el presupuesto de "${aEliminar.cliente_nombre}". No se puede deshacer.`}
+          confirmarTexto="Eliminar" peligro
+          cargando={eliminar.isPending}
+          onConfirmar={() => handleEliminar(aEliminar)}
+          onCancelar={() => setAEliminar(null)}
+        />
+      )}
+
+      {aCobrar && (
+        <PresupuestoCobrarModal
+          presupuesto={aCobrar}
+          onClose={() => setACobrar(null)}
+          onCobrado={() => setACobrar(null)}
         />
       )}
     </div>

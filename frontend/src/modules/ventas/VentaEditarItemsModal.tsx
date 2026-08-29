@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { InputDecimal } from '../../components/ui/InputDecimal'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
 import { precioProducto, tieneBolsa } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
@@ -77,8 +77,8 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
 
   function subtotalLinea(row: Row) {
     if (!row.producto) return 0
-    const pct = Math.min(Math.max(Number(row.descuentoPct) || 0, 0), 100)
-    return precioProducto(row.producto, row.esBolsa) * Number(row.cantidad || 0) * (1 - pct / 100)
+    const pct = Math.min(Math.max(parseDecimal(row.descuentoPct), 0), 100)
+    return precioProducto(row.producto, row.esBolsa) * parseDecimal(row.cantidad) * (1 - pct / 100)
   }
 
   const nuevoTotal = Math.max(
@@ -163,14 +163,14 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
                     </span>
                   )}
 
-                  <Input
-                    aria-label="Cantidad" type="number" min="0.001" step="any" value={row.cantidad}
-                    onChange={(e) => updateItem(i, { cantidad: e.target.value })}
+                  <InputDecimal
+                    aria-label="Cantidad" value={row.cantidad}
+                    onChange={(valor) => updateItem(i, { cantidad: valor })}
                   />
-                  <Input
-                    aria-label="Descuento %" type="number" min="0" max="100" step="1" placeholder="0%"
+                  <InputDecimal
+                    aria-label="Descuento %" placeholder="0%"
                     value={row.descuentoPct}
-                    onChange={(e) => updateItem(i, { descuentoPct: e.target.value })}
+                    onChange={(valor) => updateItem(i, { descuentoPct: valor })}
                   />
                   <span className="text-right text-sm tabular-nums text-text-dim">
                     {formatMoney(subtotalLinea(row))}

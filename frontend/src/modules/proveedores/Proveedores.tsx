@@ -9,7 +9,7 @@ import { useProveedores } from './api'
 import type { Proveedor } from './types'
 
 export function Proveedores() {
-  const { data: proveedores, isLoading } = useProveedores()
+  const { data: proveedores, isLoading, error, refetch } = useProveedores()
   const [editando, setEditando] = useState<Proveedor | 'nuevo' | null>(null)
   // Guarda sólo el id: si el modal se queda con una copia fija del proveedor,
   // el saldo que muestra queda desactualizado apenas se registra un pago o
@@ -62,6 +62,8 @@ export function Proveedores() {
           rowKey={(p) => p.id}
           emptyMessage="Todavía no cargaste proveedores."
           onRowClick={(p) => setCuentaDeId(p.id)}
+          error={error}
+          onRetry={refetch}
         />
       )}
 

@@ -4,6 +4,7 @@ import {
   Plus, QrCode, Receipt, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { useAuth } from '../../context/AuthContext'
@@ -174,14 +175,16 @@ function EstadoWhatsApp() {
   const { toast } = useToast()
   const { data, isLoading } = useEstadoWhatsApp()
   const desconectar = useDesconectarWhatsApp()
+  const [confirmarDesvincular, setConfirmarDesvincular] = useState(false)
 
   async function handleDesconectar() {
-    if (!window.confirm('¿Desvincular WhatsApp? Vas a tener que escanear un código QR nuevo desde el celular que uses de ahora en más.')) return
     try {
       await desconectar.mutateAsync()
       toast('WhatsApp desvinculado — escaneá el código nuevo cuando aparezca')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo desvincular WhatsApp'), 'error')
+    } finally {
+      setConfirmarDesvincular(false)
     }
   }
 
@@ -193,18 +196,31 @@ function EstadoWhatsApp() {
 
   if (estado === 'conectado') {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent-2/40 bg-accent-2/10 px-4 py-3 text-sm text-accent-2">
-        <span className="flex items-center gap-2">
-          <Check size={16} /> WhatsApp conectado — los avisos (fiado, etc.) se envían por acá.
-        </span>
-        <button
-          onClick={handleDesconectar} disabled={desconectar.isPending}
-          className="flex items-center gap-1.5 text-accent-2/80 hover:text-danger hover:underline"
-        >
-          {desconectar.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-          Desvincular (para cambiar de celular)
-        </button>
-      </div>
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent-2/40 bg-accent-2/10 px-4 py-3 text-sm text-accent-2">
+          <span className="flex items-center gap-2">
+            <Check size={16} /> WhatsApp conectado — los avisos (fiado, etc.) se envían por acá.
+          </span>
+          <button
+            onClick={() => setConfirmarDesvincular(true)} disabled={desconectar.isPending}
+            className="flex items-center gap-1.5 text-accent-2/80 hover:text-danger hover:underline"
+          >
+            {desconectar.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Desvincular (para cambiar de celular)
+          </button>
+        </div>
+
+        {confirmarDesvincular && (
+          <ConfirmDialog
+            titulo="Desvincular WhatsApp"
+            descripcion="Los avisos de fiado y pagos dejan de enviarse hasta que escanees un código QR nuevo desde el celular que uses de ahora en más."
+            confirmarTexto="Desvincular" peligro
+            cargando={desconectar.isPending}
+            onConfirmar={handleDesconectar}
+            onCancelar={() => setConfirmarDesvincular(false)}
+          />
+        )}
+      </>
     )
   }
 

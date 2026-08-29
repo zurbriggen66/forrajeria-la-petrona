@@ -43,6 +43,19 @@ export function useClientesBrowse(search: string, page: number) {
   })
 }
 
+/** Cliente ya vinculado por id (ej. el de un presupuesto), para precargarlo
+ * en el cobro sin que el cajero lo tenga que volver a buscar. */
+export function useClientePorId(id: string | null) {
+  return useQuery({
+    queryKey: ['cliente-por-id', id],
+    queryFn: async () => {
+      const { data } = await api.get<Cliente>(`/clientes/${id}/`)
+      return data
+    },
+    enabled: Boolean(id),
+  })
+}
+
 export type ResultadoVenta =
   | { status: 'ok'; venta: VentaResult }
   | { status: 'queued' }
@@ -50,7 +63,7 @@ export type ResultadoVenta =
 /** Registra una venta. Si el POST no llega a destino (sin conexión), la
  * encola en IndexedDB para reintentar cuando vuelva la conexión — el POS
  * nunca se queda "trabado" esperando red. */
-export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>): Promise<ResultadoVenta> {
+export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>, total?: number): Promise<ResultadoVenta> {
   const payload: VentaInput = { ...input, sync_uuid: crypto.randomUUID() }
   try {
     const { data } = await api.post<VentaResult>('/ventas/', payload)
@@ -61,7 +74,7 @@ export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>): Promise<
       // conexión, hay que corregir la venta, no encolarla.
       throw err
     }
-    await encolarVenta(payload)
+    await encolarVenta(payload, total)
     return { status: 'queued' }
   }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FileText, Loader2, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { KpiCard } from '../../components/ui/KpiCard'
 import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
@@ -71,7 +72,7 @@ function AsignacionVendedor({ cliente }: { cliente: Cliente }) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="tarjeta-viva rounded-xl border border-border bg-surface p-4">
       <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-text">
         <UserPlus size={15} className="text-accent" /> Vendedor asignado
       </h3>
@@ -108,6 +109,8 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   const [movimientoEditando, setMovimientoEditando] = useState<ClienteMovimiento | null>(null)
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null)
   const [presupuestoSeleccionado, setPresupuestoSeleccionado] = useState<Presupuesto | null>(null)
+  const [confirmarBaja, setConfirmarBaja] = useState(false)
+  const [movimientoAEliminar, setMovimientoAEliminar] = useState<ClienteMovimiento | null>(null)
 
   const { data: movimientos, isLoading: cargandoMovimientos } = useMovimientosCliente(cliente.id)
   const { data: ventasData, isLoading: cargandoVentas } = useVentas({ cliente: cliente.id })
@@ -122,26 +125,25 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   const disponible = Number(cliente.limite_credito) - Number(cliente.saldo_actual)
 
   async function handleEliminarCliente() {
-    const aviso = Number(cliente.saldo_actual) > 0
-      ? `${cliente.nombre} tiene un saldo pendiente de ${formatMoney(cliente.saldo_actual)}. `
-      : ''
-    if (!window.confirm(`${aviso}¿Eliminar a ${cliente.nombre}? Sus ventas quedan en el historial, pero sin cliente asociado.`)) return
     try {
       await eliminarCliente.mutateAsync(cliente.id)
       toast('Cliente eliminado')
       onClose()
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo eliminar el cliente'), 'error')
+    } finally {
+      setConfirmarBaja(false)
     }
   }
 
   async function handleEliminar(m: ClienteMovimiento) {
-    if (!window.confirm('¿Borrar este movimiento? El saldo del cliente se recalcula solo.')) return
     try {
       await eliminarMovimiento.mutateAsync(m.id)
       toast('Movimiento borrado')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo borrar el movimiento'), 'error')
+    } finally {
+      setMovimientoAEliminar(null)
     }
   }
 
@@ -169,7 +171,7 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           <button onClick={() => setMovimientoEditando(m)} aria-label="Corregir" className="text-text-dim hover:text-accent">
             <Pencil size={13} />
           </button>
-          <button onClick={() => handleEliminar(m)} aria-label="Borrar" className="text-text-dim hover:text-danger">
+          <button onClick={() => setMovimientoAEliminar(m)} aria-label="Borrar" className="text-text-dim hover:text-danger">
             <Trash2 size={13} />
           </button>
         </div>
@@ -216,7 +218,7 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
               <Pencil size={13} /> Editar datos
             </button>
             <button
-              onClick={handleEliminarCliente} disabled={eliminarCliente.isPending}
+              onClick={() => setConfirmarBaja(true)} disabled={eliminarCliente.isPending}
               className="flex items-center gap-1 text-danger hover:underline"
             >
               <Trash2 size={13} /> Eliminar cliente
@@ -230,12 +232,13 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           <KpiCard label="Disponible" value={formatMoney(disponible)} icon={Wallet} accent={disponible < 0 ? 'danger' : 'accent-2'} />
         </div>
 
+        {/* Cuenta corriente primero: es lo que el dueño viene a mirar más
+            seguido a esta ficha (cuánto debe, cuándo pagó) — antes que
+            vendedor, ventas o presupuestos. */}
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setMovimientoModo('pago')}>Registrar pago</Button>
           <Button variant="secondary" onClick={() => setMovimientoModo('ajuste')}>Ajuste manual</Button>
         </div>
-
-        <AsignacionVendedor cliente={cliente} />
 
         <div>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
@@ -247,6 +250,8 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
             <Table columns={columnasMovimientos} rows={movimientos ?? []} rowKey={(m) => m.id} emptyMessage="Sin movimientos todavía." />
           )}
         </div>
+
+        <AsignacionVendedor cliente={cliente} />
 
         <div>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
@@ -300,6 +305,28 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
       )}
       {ventaSeleccionada && (
         <TicketDetalleModal venta={ventaSeleccionada} onClose={() => setVentaSeleccionada(null)} />
+      )}
+      {confirmarBaja && (
+        <ConfirmDialog
+          titulo={`Eliminar a ${cliente.nombre}`}
+          descripcion={`${Number(cliente.saldo_actual) > 0
+            ? `Tiene un saldo pendiente de ${formatMoney(cliente.saldo_actual)}. `
+            : ''}Sus ventas quedan en el historial, pero sin cliente asociado.`}
+          confirmarTexto="Eliminar cliente" peligro
+          cargando={eliminarCliente.isPending}
+          onConfirmar={handleEliminarCliente}
+          onCancelar={() => setConfirmarBaja(false)}
+        />
+      )}
+      {movimientoAEliminar && (
+        <ConfirmDialog
+          titulo="Borrar movimiento"
+          descripcion="El saldo del cliente se recalcula solo al borrarlo. No se puede deshacer."
+          confirmarTexto="Borrar" peligro
+          cargando={eliminarMovimiento.isPending}
+          onConfirmar={() => handleEliminar(movimientoAEliminar)}
+          onCancelar={() => setMovimientoAEliminar(null)}
+        />
       )}
       {presupuestoSeleccionado && (
         <PresupuestoFormModal presupuesto={presupuestoSeleccionado} onClose={() => setPresupuestoSeleccionado(null)} />

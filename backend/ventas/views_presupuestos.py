@@ -11,7 +11,7 @@ from core.mixins import TenantViewSet, resolver_comercio_activo
 from productos.models import Producto
 from productos.precios import resolver_precio_item
 
-from .models import Presupuesto, PresupuestoItem
+from .models import Presupuesto, PresupuestoItem, Venta
 from .serializers_presupuestos import (
     PresupuestoEstadoSerializer,
     PresupuestoSerializer,
@@ -62,13 +62,31 @@ class PresupuestoViewSet(TenantViewSet):
 
     @action(detail=True, methods=["post"])
     def estado(self, request, pk=None):
-        """Cambiar sólo el estado (pendiente → aprobado/rechazado/vencido),
-        que es lo que se toca desde la lista sin reabrir todo el formulario."""
+        """Cambiar sólo el estado (pendiente → aprobado/rechazado/vencido/
+        cobrado), que es lo que se toca desde la lista sin reabrir todo el
+        formulario.
+
+        Al cobrar, el frontend ya creó la Venta por la vía de siempre
+        (POST /ventas/, con toda su validación de stock/caja/cuenta
+        corriente) y sólo manda el id acá para linkearla — este endpoint no
+        cobra nada, sólo lleva la cuenta de en qué venta terminó."""
         presupuesto = self.get_object()
         serializer = PresupuestoEstadoSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        comercio = resolver_comercio_activo(request)
+
         presupuesto.estado = serializer.validated_data["estado"]
-        presupuesto.save(update_fields=["estado", "updated_at"])
+        campos = ["estado", "updated_at"]
+
+        venta_id = serializer.validated_data["venta"]
+        if venta_id:
+            venta = Venta.objects.filter(comercio=comercio, id=venta_id).first()
+            if venta is None:
+                raise ValidationError({"venta": "No pertenece a este comercio."})
+            presupuesto.venta = venta
+            campos.append("venta")
+
+        presupuesto.save(update_fields=campos)
         return Response(PresupuestoSerializer(presupuesto).data)
 
     def _guardar(self, comercio, data, instancia=None):

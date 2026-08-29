@@ -1,14 +1,16 @@
+import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from caja.models import CajaSesion
 from clientes.models import Cliente
 from core.models import Comercio, UsuarioComercio
 from productos.models import Producto
 
-from .models import Presupuesto
+from .models import Presupuesto, Venta
 
 User = get_user_model()
 
@@ -108,6 +110,41 @@ class PresupuestoTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(Decimal(response.data["total"]), Decimal("10000.00"))
         self.assertEqual(Presupuesto.objects.get(id=presupuesto_id).items.count(), 1)
+
+    def test_cobrar_linkea_la_venta_resultante(self):
+        """El frontend crea la Venta por la vía normal (POST /ventas/) y sólo
+        manda el id acá para linkearla — así las estadísticas, que sólo miran
+        Venta, ven esta plata con su método de pago real."""
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+        creado = self.client.post("/api/presupuestos/", self._payload(), format="json").data
+        self.client.post(f"/api/presupuestos/{creado['id']}/estado/", {"estado": "aprobado"}, format="json")
+
+        venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.balanceado.id), "cantidad": "2", "es_bolsa": True}],
+            "metodo_pago": "efectivo", "monto_efectivo": "20000", "efectivo_recibido": "20000",
+        }, format="json").data
+
+        response = self.client.post(f"/api/presupuestos/{creado['id']}/estado/", {
+            "estado": "cobrado", "venta": venta["id"],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["estado"], "cobrado")
+        self.assertEqual(str(response.data["venta"]), venta["id"])
+        self.assertEqual(response.data["venta_numero_ticket"], venta["numero_ticket"])
+
+        presupuesto = Presupuesto.objects.get(id=creado["id"])
+        self.assertEqual(str(presupuesto.venta_id), venta["id"])
+
+    def test_rechaza_linkear_venta_de_otro_comercio(self):
+        otro = Comercio.objects.create(nombre="Otro comercio")
+        venta_ajena = Venta.objects.create(comercio=otro, total=100)
+        creado = self.client.post("/api/presupuestos/", self._payload(), format="json").data
+
+        response = self.client.post(f"/api/presupuestos/{creado['id']}/estado/", {
+            "estado": "cobrado", "venta": str(venta_ajena.id),
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_no_ve_presupuestos_de_otro_comercio(self):
         otro = Comercio.objects.create(nombre="Otro comercio")

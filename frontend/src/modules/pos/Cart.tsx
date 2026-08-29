@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { AlertTriangle, Minus, Package, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { InputDecimal } from '../../components/ui/InputDecimal'
 import { Table, type Column } from '../../components/ui/Table'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
 import { formatCantidadStock } from '../productos/stock'
 import { cantidadInputId, kgEquivalente, precioUnitario, subtotalLinea } from './precio'
 import type { CartItem } from './types'
@@ -34,42 +36,41 @@ function CantidadPorPeso({ item, onCambiarCantidad }: {
   const unidad = item.producto.unidad_medida || 'kg'
 
   function activarModoMonto() {
-    const monto = Number(item.cantidad) * precio
+    const monto = parseDecimal(item.cantidad) * precio
     setMontoTexto(monto > 0 ? String(Math.round(monto * 100) / 100) : '')
     setModo('monto')
   }
 
   function cambiarMonto(valor: string) {
     setMontoTexto(valor)
-    const kg = precio > 0 ? (Number(valor) || 0) / precio : 0
+    const kg = precio > 0 ? parseDecimal(valor) / precio : 0
     onCambiarCantidad(item.producto.id, item.esBolsa, kg.toFixed(3))
   }
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
-        {/* step="any" y no "0.001": las flechitas suben de a 1 (que es como se
-            cuentan bolsas, tornillos y metros) pero sigue aceptando decimales
-            tipeados, como 2,5 kg. */}
-        <input
+        {/* InputDecimal y no type="number": acá se pesa y se tipea "2,5", y
+            un input numérico con coma queda inválido — la cantidad se caía a
+            0 con el "2,5" todavía a la vista (ver parseDecimal en format.ts). */}
+        <InputDecimal
           id={cantidadInputId(item.producto.id, item.esBolsa)}
-          type="number" step="any" min="0"
-          placeholder={modo === 'kg' ? '0.000' : '0'}
-          onFocus={(e) => e.target.select()}
+          aria-label={modo === 'kg' ? `Cantidad de ${item.producto.nombre}` : `Monto de ${item.producto.nombre}`}
+          placeholder={modo === 'kg' ? '0,000' : '0'}
           value={modo === 'kg' ? item.cantidad : montoTexto}
-          onChange={(e) => (
+          onChange={(valor) => (
             modo === 'kg'
-              ? onCambiarCantidad(item.producto.id, item.esBolsa, e.target.value)
-              : cambiarMonto(e.target.value)
+              ? onCambiarCantidad(item.producto.id, item.esBolsa, valor)
+              : cambiarMonto(valor)
           )}
-          className="w-20 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+          className="w-20 !px-2 !py-2 text-right tabular-nums"
         />
         <span className="text-xs text-text-dim">{modo === 'kg' ? unidad : '$'}</span>
       </div>
       <div className="flex gap-1">
         <button
           type="button" onClick={() => setModo('kg')}
-          className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`min-h-9 flex-1 rounded-lg px-2 text-xs font-medium transition-colors ${
             modo === 'kg' ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
           }`}
         >
@@ -77,7 +78,7 @@ function CantidadPorPeso({ item, onCambiarCantidad }: {
         </button>
         <button
           type="button" onClick={activarModoMonto}
-          className={`rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`min-h-9 flex-1 rounded-lg px-2 text-xs font-medium transition-colors ${
             modo === 'monto' ? 'bg-accent/15 text-accent' : 'text-text-dim hover:bg-surface-2 hover:text-text'
           }`}
         >
@@ -111,6 +112,8 @@ function StockLinea({ item }: { item: CartItem }) {
 }
 
 export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, onVaciar }: Props) {
+  const [confirmarVaciar, setConfirmarVaciar] = useState(false)
+
   if (items.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border text-text-dim">
@@ -155,7 +158,7 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
     {
       header: 'Cant.',
       render: (item) => {
-        const cantidad = Number(item.cantidad)
+        const cantidad = parseDecimal(item.cantidad)
         if (item.producto.venta_por_peso && !item.esBolsa) {
           return <CantidadPorPeso item={item} onCambiarCantidad={onCambiarCantidad} />
         }
@@ -163,25 +166,23 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
           <div className="flex items-center gap-1">
             <button
               onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(Math.max(1, cantidad - 1)))}
-              className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
+              className="rounded-lg p-2.5 text-text-dim hover:bg-surface-2 hover:text-text"
               aria-label={`Restar uno de ${item.producto.nombre}`}
             >
               <Minus size={15} />
             </button>
             {/* Tipeable y no un <span>: cargar 24 bolsas a botonazos es
                 absurdo. El +/- queda para el caso de a uno, que es el común. */}
-            <input
+            <InputDecimal
               id={cantidadInputId(item.producto.id, item.esBolsa)}
-              type="number" step="1" min="1"
               aria-label={`Cantidad de ${item.producto.nombre}`}
-              onFocus={(e) => e.target.select()}
               value={item.cantidad}
-              onChange={(e) => onCambiarCantidad(item.producto.id, item.esBolsa, e.target.value)}
-              className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-center text-sm tabular-nums focus:border-accent focus:outline-none"
+              onChange={(valor) => onCambiarCantidad(item.producto.id, item.esBolsa, valor)}
+              className="w-14 !px-2 !py-2 text-center tabular-nums"
             />
             <button
               onClick={() => onCambiarCantidad(item.producto.id, item.esBolsa, String(cantidad + 1))}
-              className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
+              className="rounded-lg p-2.5 text-text-dim hover:bg-surface-2 hover:text-text"
               aria-label={`Sumar uno de ${item.producto.nombre}`}
             >
               <Plus size={15} />
@@ -194,13 +195,12 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
     {
       header: 'Desc. %',
       render: (item) => (
-        <input
-          type="number" step="1" min="0" max="100" placeholder="0"
+        <InputDecimal
+          placeholder="0"
           aria-label={`Descuento en ${item.producto.nombre}`}
-          onFocus={(e) => e.target.select()}
           value={item.descuentoPct}
-          onChange={(e) => onCambiarDescuento(item.producto.id, item.esBolsa, e.target.value)}
-          className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+          onChange={(valor) => onCambiarDescuento(item.producto.id, item.esBolsa, valor)}
+          className="w-14 !px-2 !py-2 text-right tabular-nums"
         />
       ),
     },
@@ -211,7 +211,7 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
     {
       header: 'Subtotal',
       render: (item) => {
-        const bruto = precioUnitario(item) * Number(item.cantidad)
+        const bruto = precioUnitario(item) * parseDecimal(item.cantidad)
         const neto = subtotalLinea(item)
         return (
           <div className="flex flex-col leading-tight">
@@ -247,7 +247,7 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
           <span className="tabular-nums font-medium text-text">{formatMoney(subtotalTotal)}</span>
         </span>
         <button
-          onClick={onVaciar}
+          onClick={() => setConfirmarVaciar(true)}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-text-dim hover:bg-danger/10 hover:text-danger"
         >
           <Trash2 size={13} /> Vaciar carrito
@@ -257,6 +257,16 @@ export function Cart({ items, onCambiarCantidad, onCambiarDescuento, onQuitar, o
       <div className="flex-1 overflow-y-auto">
         <Table columns={columns} rows={items} rowKey={(item) => `${item.producto.id}:${item.esBolsa}`} />
       </div>
+
+      {confirmarVaciar && (
+        <ConfirmDialog
+          titulo="Vaciar carrito"
+          descripcion={`Se van a quitar ${items.length} línea${items.length === 1 ? '' : 's'} por ${formatMoney(subtotalTotal)}. Hay que volver a cargar todo.`}
+          confirmarTexto="Vaciar" peligro
+          onConfirmar={() => { onVaciar(); setConfirmarVaciar(false) }}
+          onCancelar={() => setConfirmarVaciar(false)}
+        />
+      )}
     </div>
   )
 }

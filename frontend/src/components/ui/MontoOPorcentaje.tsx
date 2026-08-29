@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal } from '../../lib/format'
+import { InputDecimal } from './InputDecimal'
 
 interface Props {
   id: string
@@ -32,11 +33,11 @@ export function MontoOPorcentaje({ id, label, base, value, onChange }: Props) {
   // descuento, no dejarlo clavado en el total de antes.
   useEffect(() => {
     if (modo !== 'pct') return
-    const porcentaje = Number(pct) || 0
+    const porcentaje = parseDecimal(pct)
     onChangeRef.current(((base * porcentaje) / 100).toFixed(2))
   }, [modo, pct, base])
 
-  const equivalePct = base > 0 ? (Number(value || 0) / base) * 100 : 0
+  const equivalePct = base > 0 ? (parseDecimal(value) / base) * 100 : 0
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -58,18 +59,16 @@ export function MontoOPorcentaje({ id, label, base, value, onChange }: Props) {
         </div>
       </div>
 
-      <input
+      <InputDecimal
         id={id}
-        type="number" min="0" step={modo === 'pct' ? '1' : '0.01'} placeholder="0"
+        placeholder="0"
         value={modo === 'pct' ? pct : value}
-        onFocus={(e) => e.target.select()}
-        onChange={(e) => (modo === 'pct' ? setPct(e.target.value) : onChange(e.target.value))}
-        className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        onChange={(valor) => (modo === 'pct' ? setPct(valor) : onChange(valor))}
       />
 
       {/* Siempre a la vista la otra cara del número: en % cuántos pesos son, y
           en $ qué porcentaje representa. Es lo que se discute en el mostrador. */}
-      {Number(value) > 0 && (
+      {parseDecimal(value) > 0 && (
         <span className="text-[11px] tabular-nums text-text-dim">
           {modo === 'pct'
             ? `= ${formatMoney(value)}`

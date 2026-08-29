@@ -39,11 +39,21 @@ export function useUpdatePresupuesto() {
 export function useCambiarEstadoPresupuesto() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, estado }: { id: string; estado: EstadoPresupuesto }) => {
-      const { data } = await api.post<Presupuesto>(`/presupuestos/${id}/estado/`, { estado })
+    mutationFn: async (
+      { id, estado, venta }: { id: string; estado: EstadoPresupuesto; venta?: string },
+    ) => {
+      const { data } = await api.post<Presupuesto>(`/presupuestos/${id}/estado/`, { estado, venta })
       return data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['presupuestos'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['presupuestos'] })
+      // Al cobrar (venta presente) esto también movió ventas, estadísticas
+      // y, si fue a cuenta corriente, la deuda del cliente.
+      queryClient.invalidateQueries({ queryKey: ['ventas'] })
+      queryClient.invalidateQueries({ queryKey: ['estadisticas'] })
+      queryClient.invalidateQueries({ queryKey: ['cliente-movimientos'] })
+      queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+    },
   })
 }
 

@@ -1,3 +1,4 @@
+import { parseDecimal } from '../../lib/format'
 import type { Producto } from '../productos/types'
 import type { CartItem } from './types'
 
@@ -23,16 +24,16 @@ export function precioUnitario(item: CartItem): number {
  * ventas/views.py::_crear_venta — el server siempre recalcula, esto es para
  * mostrar el mismo número antes de cobrar. */
 export function subtotalLinea(item: CartItem): number {
-  const pct = Math.min(Math.max(Number(item.descuentoPct) || 0, 0), 100)
-  return precioUnitario(item) * Number(item.cantidad) * (1 - pct / 100)
+  const pct = Math.min(Math.max(parseDecimal(item.descuentoPct), 0), 100)
+  return precioUnitario(item) * parseDecimal(item.cantidad) * (1 - pct / 100)
 }
 
 /** Kg reales que representa la línea contra el stock del producto (que
  * siempre está en kg para productos de venta a granel) — 1 bolsa son
  * `bolsa_kg` kilos, no "1". Para productos que no son a granel, no aplica. */
 export function kgEquivalente(item: CartItem): number {
-  if (item.esBolsa) return Number(item.cantidad) * Number(item.producto.bolsa_kg)
-  return Number(item.cantidad)
+  if (item.esBolsa) return parseDecimal(item.cantidad) * Number(item.producto.bolsa_kg)
+  return parseDecimal(item.cantidad)
 }
 
 /** Un producto se puede vender también por bolsa cerrada cuando tiene los

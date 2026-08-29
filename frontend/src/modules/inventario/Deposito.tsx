@@ -41,7 +41,7 @@ export function Deposito() {
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {depositos!.map((d) => (
-            <div key={d.id} className="rounded-xl border border-border bg-surface p-4">
+            <div key={d.id} className="tarjeta-viva rounded-xl border border-border bg-surface p-4">
               <div className="mb-1 flex items-center gap-2 text-accent">
                 <Warehouse size={15} />
                 <span className="font-medium text-text">{d.nombre}</span>

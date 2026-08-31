@@ -9,19 +9,27 @@ import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
 import { parseDecimal } from '../../lib/format'
-import { cantidadInputId, subtotalLinea } from './precio'
+import { cantidadInputId, claveLinea, subtotalLinea } from './precio'
 import { PosStats } from './PosStats'
 import { ProductSearch } from './ProductSearch'
 import { QuickProducts } from './QuickProducts'
 import { TicketModal, type TicketData } from './TicketModal'
 import { VentasPendientesModal } from './VentasPendientesModal'
+import { VentasPausadasModal } from './VentasPausadasModal'
+import {
+  guardarCarrito, leerCarrito, listarPausadas, pausarVenta, quitarPausada,
+  type VentaPausada,
+} from './ventasPausadas'
+import { useCombos } from '../productos/api'
 import { useCatalogoPOS } from './useCatalogoPOS'
 import { useOfflineSync } from './useOfflineSync'
-import type { CartItem } from './types'
+import type { CartItem, CartItemPack } from './types'
 import type { Producto } from '../productos/types'
 
 export function PosPage() {
   const { productos, loading: cargandoCatalogo, desdeCache } = useCatalogoPOS()
+  // Sólo los activos: un pack apagado no se ofrece en el mostrador.
+  const { data: packs } = useCombos(true)
   const { online, pendientes, rechazadas, sincronizando, sincronizar } = useOfflineSync()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -29,7 +37,11 @@ export function PosPage() {
   // POS (offline-first) y confiamos en que el backend valide al sincronizar.
   const { data: cajaActual, isLoading: cargandoCaja, isError: errorCaja } = useCajaActual()
 
-  const [cart, setCart] = useState<CartItem[]>([])
+  // El carrito arranca de lo guardado en el dispositivo: irse a mirar el stock
+  // —o que se recargue la pestaña— ya no se lleva puesta la venta a medio cargar.
+  const [cart, setCart] = useState<CartItem[]>(() => leerCarrito())
+  const [pausadas, setPausadas] = useState<VentaPausada[]>(() => listarPausadas())
+  const [verPausadas, setVerPausadas] = useState(false)
   const [cobrando, setCobrando] = useState(false)
   const [ticket, setTicket] = useState<TicketData | null>(null)
   // Producto a granel recién agregado: en cuanto el carrito lo renderiza, le
@@ -44,6 +56,10 @@ export function PosPage() {
   )
 
   useEffect(() => {
+    guardarCarrito(cart)
+  }, [cart])
+
+  useEffect(() => {
     if (!enfocarPeso) return
     const input = document.getElementById(enfocarPeso) as HTMLInputElement | null
     input?.focus()
@@ -51,42 +67,75 @@ export function PosPage() {
     setEnfocarPeso(null)
   }, [enfocarPeso])
 
+  function pausarActual() {
+    if (cart.length === 0) return
+    setPausadas(pausarVenta(cart))
+    setCart([])
+    toast('Venta pausada — la retomás desde el carrito')
+  }
+
+  /** Retomar no pisa lo que está cargado: si hay algo en el mostrador se pausa
+   * solo, así el cajero puede ir y venir entre dos clientes sin perder nada. */
+  function retomarVenta(venta: VentaPausada) {
+    let listado = quitarPausada(venta.id)
+    if (cart.length > 0) listado = pausarVenta(cart)
+    setPausadas(listado)
+    setCart(venta.items)
+    setVerPausadas(false)
+  }
+
+  function descartarPausada(venta: VentaPausada) {
+    setPausadas(quitarPausada(venta.id))
+  }
+
+  /** Suma uno a la línea que ya está, o la agrega. `paso` existe porque a
+   * granel se suma de a 100 g y no de a un kilo. */
+  function sumarOAgregar(nueva: CartItem, paso: number) {
+    const clave = claveLinea(nueva)
+    setCart((prev) => (
+      prev.some((i) => claveLinea(i) === clave)
+        ? prev.map((i) => (claveLinea(i) === clave ? { ...i, cantidad: String(parseDecimal(i.cantidad) + paso) } : i))
+        : [...prev, nueva]
+    ))
+  }
+
   function agregarProducto(producto: Producto, esBolsa: boolean) {
-    setCart((prev) => {
-      const existente = prev.find((i) => i.producto.id === producto.id && i.esBolsa === esBolsa)
-      if (existente) {
-        const paso = esBolsa ? 1 : producto.venta_por_peso ? 0.1 : 1
-        return prev.map((i) =>
-          i.producto.id === producto.id && i.esBolsa === esBolsa
-            ? { ...i, cantidad: String(parseDecimal(i.cantidad) + paso) }
-            : i,
-        )
-      }
-      return [...prev, { producto: producto as CartItem['producto'], cantidad: '1', esBolsa, descuentoPct: '' }]
-    })
+    sumarOAgregar(
+      {
+        tipo: 'producto',
+        producto: producto as Extract<CartItem, { tipo: 'producto' }>['producto'],
+        cantidad: '1',
+        esBolsa,
+        descuentoPct: '',
+      },
+      esBolsa ? 1 : producto.venta_por_peso ? 0.1 : 1,
+    )
     if (producto.venta_por_peso && !esBolsa) {
       setEnfocarPeso(cantidadInputId(producto.id, esBolsa))
     }
   }
 
-  function cambiarCantidad(productoId: string, esBolsa: boolean, cantidad: string) {
+  /** Un pack entra como UNA línea a su propio precio. El stock de cada producto
+   * que lo compone lo descuenta el servidor al cobrar
+   * (ventas/views.py::_crear_venta): acá no se toca nada del catálogo. */
+  function agregarPack(pack: CartItemPack['pack']) {
+    sumarOAgregar({ tipo: 'pack', pack, cantidad: '1', descuentoPct: '' }, 1)
+  }
+
+  function cambiarCantidad(clave: string, cantidad: string) {
     // Sin guarda de "<=0 borra la línea": el stepper de +/- ya nunca baja de 1
     // (Math.max(1, …) en Cart), y en el campo de peso a granel un "0"
     // intermedio es normal mientras se tipea "0.350" — borrar la línea ahí
     // se comía el producto apenas el cajero empezaba a escribir el peso real.
-    setCart((prev) =>
-      prev.map((i) => (i.producto.id === productoId && i.esBolsa === esBolsa ? { ...i, cantidad } : i)),
-    )
+    setCart((prev) => prev.map((i) => (claveLinea(i) === clave ? { ...i, cantidad } : i)))
   }
 
-  function cambiarDescuento(productoId: string, esBolsa: boolean, pct: string) {
-    setCart((prev) =>
-      prev.map((i) => (i.producto.id === productoId && i.esBolsa === esBolsa ? { ...i, descuentoPct: pct } : i)),
-    )
+  function cambiarDescuento(clave: string, pct: string) {
+    setCart((prev) => prev.map((i) => (claveLinea(i) === clave ? { ...i, descuentoPct: pct } : i)))
   }
 
-  function quitarProducto(productoId: string, esBolsa: boolean) {
-    setCart((prev) => prev.filter((i) => !(i.producto.id === productoId && i.esBolsa === esBolsa)))
+  function quitarLinea(clave: string) {
+    setCart((prev) => prev.filter((i) => claveLinea(i) !== clave))
   }
 
   async function handleCobrar(datos: DatosCobro) {
@@ -95,12 +144,18 @@ export function PosPage() {
     try {
       const total = Math.max(subtotal - parseDecimal(datos.descuento) + parseDecimal(datos.recargoMonto), 0)
       const resultado = await crearVenta({
-        items: cart.map((i) => ({
-          producto: i.producto.id,
-          cantidad: i.cantidad,
-          es_bolsa: i.esBolsa,
-          descuento_pct: i.descuentoPct || '0',
-        })),
+        // Cada línea manda producto O pack, nunca los dos: el serializer lo
+        // valida (ventas/serializers.py::VentaItemInputSerializer).
+        items: cart.map((i) => (
+          i.tipo === 'pack'
+            ? { combo: i.pack.id, cantidad: i.cantidad, descuento_pct: i.descuentoPct || '0' }
+            : {
+              producto: i.producto.id,
+              cantidad: i.cantidad,
+              es_bolsa: i.esBolsa,
+              descuento_pct: i.descuentoPct || '0',
+            }
+        )),
         cliente: datos.cliente?.id ?? null,
         cuenta_pago: datos.cuentaPagoId || null,
         pagos: datos.pagos.length > 0 ? datos.pagos : undefined,
@@ -176,13 +231,21 @@ export function PosPage() {
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto lg:flex-row lg:overflow-hidden">
         <div className="flex flex-1 flex-col gap-3 lg:overflow-hidden">
           <ProductSearch productos={productos} onAgregar={agregarProducto} />
-          <QuickProducts productos={productos} onAgregar={agregarProducto} />
+          <QuickProducts
+            productos={productos}
+            onAgregar={agregarProducto}
+            packs={packs ?? []}
+            onAgregarPack={agregarPack}
+          />
           <Cart
             items={cart}
             onCambiarCantidad={cambiarCantidad}
             onCambiarDescuento={cambiarDescuento}
-            onQuitar={quitarProducto}
+            onQuitar={quitarLinea}
             onVaciar={() => setCart([])}
+            onPausar={pausarActual}
+            pausadas={pausadas.length}
+            onVerPausadas={() => setVerPausadas(true)}
           />
         </div>
 
@@ -195,6 +258,16 @@ export function PosPage() {
       </div>
 
       {ticket && <TicketModal data={ticket} onNuevaVenta={() => setTicket(null)} />}
+
+      {verPausadas && (
+        <VentasPausadasModal
+          ventas={pausadas}
+          hayCarrito={cart.length > 0}
+          onRetomar={retomarVenta}
+          onDescartar={descartarPausada}
+          onClose={() => setVerPausadas(false)}
+        />
+      )}
 
       {verPendientes && (
         <VentasPendientesModal

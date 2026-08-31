@@ -63,7 +63,7 @@ export function CerrarCajaModal({ sesion, onClose }: { sesion: CajaSesionActual;
   if (resultado) {
     const diferencia = Number(resultado.diferencia ?? 0)
     return (
-      <Modal title="Turno cerrado" onClose={onClose} wide>
+      <Modal title="Turno cerrado" onClose={onClose} ancho="lg">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-center gap-2 text-accent-2">
             <CheckCircle2 size={28} />
@@ -87,7 +87,7 @@ export function CerrarCajaModal({ sesion, onClose }: { sesion: CajaSesionActual;
   }
 
   return (
-    <Modal title="Cerrar turno" onClose={onClose} wide>
+    <Modal title="Cerrar turno" onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <p className="text-sm text-text-dim">
           Contá cada contenedor por separado. El efectivo es el que hay que contar de verdad;

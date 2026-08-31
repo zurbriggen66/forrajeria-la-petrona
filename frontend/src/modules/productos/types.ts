@@ -55,6 +55,9 @@ export interface Producto {
   modelo_nombre: string
   talle: string
   color: string
+  /** Foto del producto. Vacío en la mayoría del catálogo: la galería de
+   * aumentos cae a la inicial del nombre cuando no hay. */
+  imagen_url: string
   destacado: boolean
   activo: boolean
   created_at: string
@@ -68,8 +71,14 @@ export type ProductoInput = Partial<
 export interface ComboItem {
   id?: string
   producto: string
-  producto_nombre?: string
   cantidad: string
+  // Sólo de lectura: los manda el backend para que el armador pueda mostrar el
+  // precio suelto y el stock sin volver a pedir cada producto.
+  producto_nombre?: string
+  producto_precio_venta?: string
+  producto_precio_costo?: string
+  producto_stock?: string
+  producto_unidad_medida?: string
 }
 
 export interface Combo {
@@ -79,6 +88,23 @@ export interface Combo {
   precio: string
   activo: boolean
   items: ComboItem[]
+  /** Lo que costaría comprar lo mismo suelto. */
+  precio_suelto: string
+  costo: string
+  /** Cuánto se le regala al cliente contra el suelto. Negativo = el pack sale
+   * más caro que suelto, que casi siempre es un error de carga. */
+  descuento_pct: number | null
+  margen_pct: number | null
+  /** Cuántos packs enteros salen del stock de hoy: manda el más escaso. */
+  armables: number
+}
+
+export interface ComboInput {
+  nombre: string
+  descripcion?: string
+  precio: string
+  activo?: boolean
+  items: { producto: string; cantidad: string }[]
 }
 
 export interface AjustePrecio {
@@ -95,7 +121,12 @@ export interface AjustePrecio {
 export interface AplicarAjusteInput {
   descripcion?: string
   tipo: 'porcentaje' | 'monto'
+  /** Valor general. Negativo = descuento; no hay otro camino para eso. */
   valor: string
   categoria?: string
   proveedor?: string
+  /** Selección explícita de la galería. Cuando viene, el backend la usa en
+   * lugar del filtro de categoría/proveedor. `valor` por producto es opcional:
+   * ausente = va con el general. */
+  productos?: { producto: string; valor?: string }[]
 }

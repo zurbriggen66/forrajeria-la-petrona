@@ -62,5 +62,11 @@ class CompraItem(BaseModel):
     compra = models.ForeignKey(Compra, on_delete=models.CASCADE, related_name="items")
     producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, blank=True)
     cantidad = models.DecimalField(max_digits=14, decimal_places=3, default=1)
-    costo_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # 4 decimales, igual que Producto.precio_costo — de ahí sale precargado y de
+    # ahí vuelve al guardar. Con 2, elegir un producto cuyo costo fuera
+    # "2200.0000" y guardar sin tocar nada hacía rechazar la compra entera
+    # ("Asegúrese de que no haya más de 2 decimales"), y también toda compra
+    # cargada por "pagué en total" cuando el total no dividía justo.
+    costo_unitario = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    # subtotal SÍ es plata: dos decimales, como el total de la compra.
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)

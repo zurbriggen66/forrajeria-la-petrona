@@ -55,7 +55,7 @@ export function PedidoManualFormModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="Nuevo pedido" onClose={onClose} wide>
+    <Modal title="Nuevo pedido" onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div>
           <div className="mb-2 flex items-center justify-between">

@@ -19,7 +19,7 @@ from core.models import Comercio, UsuarioComercio
 from fiscal.afip import ErrorFiscal
 from fiscal.models import ComercioFiscalConfig, FiscalQueue
 from kubobots.models import KubobotsCliente
-from productos.models import Producto
+from productos.models import Combo, ComboItem, Producto
 from .models import Venta
 
 User = get_user_model()
@@ -1124,3 +1124,115 @@ class VentaFraccionadaMetroYUnidadTests(APITestCase):
         item = Venta.objects.get(id=response.data["id"]).items.first()
         self.assertEqual(item.costo_unitario, Decimal("6000.00"), "$400/m * 15 m")
         self.assertEqual(item.peso_kg, Decimal("15.000"), "registra los metros reales descontados")
+
+
+class VentaDePackTests(APITestCase):
+    """Vender un pack: se cobra como una línea a su propio precio y descuenta el
+    stock de cada producto que lo compone."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero-packs", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta", monto_apertura=Decimal("0"))
+
+        self.balanceado = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado", precio_venta=Decimal("11500.00"),
+            precio_costo=Decimal("8000.0000"), stock=Decimal("25"),
+        )
+        self.huevo = Producto.objects.create(
+            comercio=self.comercio, nombre="Huevo", precio_venta=Decimal("250.00"),
+            precio_costo=Decimal("150.0000"), stock=Decimal("450"),
+        )
+        self.pack = Combo.objects.create(
+            comercio=self.comercio, nombre="10 balanceados", precio=Decimal("100000.00"),
+        )
+        ComboItem.objects.create(combo=self.pack, producto=self.balanceado, cantidad=Decimal("10"))
+
+    def _vender(self, items, **extra):
+        payload = {"sync_uuid": str(uuid.uuid4()), "items": items, "metodo_pago": "efectivo"}
+        payload.update(extra)
+        return self.client.post("/api/ventas/", payload, format="json")
+
+    def _stock(self, producto):
+        producto.refresh_from_db()
+        return producto.stock
+
+    def test_vender_un_pack_cobra_su_precio_y_descuenta_los_componentes(self):
+        response = self._vender([{"combo": str(self.pack.id), "cantidad": "1"}])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        # El precio es el del pack, no la suma de los sueltos ($115.000).
+        self.assertEqual(Decimal(response.data["total"]), Decimal("100000.00"))
+        # Y el stock baja por los componentes: 25 - 10 = 15.
+        self.assertEqual(self._stock(self.balanceado), Decimal("15.000"))
+        # Una sola línea en el ticket, con el pack y sin producto.
+        item = response.data["items"][0]
+        self.assertEqual(str(item["combo"]), str(self.pack.id))
+        self.assertEqual(item["combo_nombre"], "10 balanceados")
+        self.assertIsNone(item["producto"])
+        # El costo guardado es el de los componentes: 10 × 8.000
+        self.assertEqual(Decimal(item["costo_unitario"]), Decimal("80000.00"))
+
+    def test_dos_packs_descuentan_el_doble(self):
+        self._vender([{"combo": str(self.pack.id), "cantidad": "2"}])
+        self.assertEqual(self._stock(self.balanceado), Decimal("5.000"))
+
+    def test_pack_con_varios_productos(self):
+        ComboItem.objects.create(combo=self.pack, producto=self.huevo, cantidad=Decimal("12"))
+        self._vender([{"combo": str(self.pack.id), "cantidad": "1"}])
+        self.assertEqual(self._stock(self.balanceado), Decimal("15.000"))
+        self.assertEqual(self._stock(self.huevo), Decimal("438.000"))
+
+    def test_el_mismo_producto_suelto_y_en_un_pack_descuenta_las_dos_veces(self):
+        """El caso que rompe un bulk_update mal hecho: la misma fila aparece dos
+        veces y las dos bajas tienen que sumarse."""
+        self._vender([
+            {"combo": str(self.pack.id), "cantidad": "1"},
+            {"producto": str(self.balanceado.id), "cantidad": "3"},
+        ])
+        self.assertEqual(self._stock(self.balanceado), Decimal("12.000"))
+
+    def test_sin_stock_suficiente_para_el_pack_se_rechaza(self):
+        self.comercio.permitir_venta_sin_stock = False
+        self.comercio.save(update_fields=["permitir_venta_sin_stock"])
+        response = self._vender([{"combo": str(self.pack.id), "cantidad": "3"}])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Balanceado", str(response.data))
+        self.assertEqual(self._stock(self.balanceado), Decimal("25.000"))
+
+    def test_anular_una_venta_con_pack_devuelve_el_stock_de_los_componentes(self):
+        venta_id = self._vender([{"combo": str(self.pack.id), "cantidad": "2"}]).data["id"]
+        self.assertEqual(self._stock(self.balanceado), Decimal("5.000"))
+        response = self.client.post(f"/api/ventas/{venta_id}/anular/", {"motivo": "prueba"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._stock(self.balanceado), Decimal("25.000"))
+
+    def test_anular_suma_las_dos_bajas_del_mismo_producto(self):
+        venta_id = self._vender([
+            {"combo": str(self.pack.id), "cantidad": "1"},
+            {"producto": str(self.balanceado.id), "cantidad": "3"},
+        ]).data["id"]
+        self.assertEqual(self._stock(self.balanceado), Decimal("12.000"))
+        self.client.post(f"/api/ventas/{venta_id}/anular/", {"motivo": "prueba"}, format="json")
+        self.assertEqual(self._stock(self.balanceado), Decimal("25.000"))
+
+    def test_una_linea_no_puede_llevar_producto_y_pack(self):
+        response = self._vender([
+            {"producto": str(self.balanceado.id), "combo": str(self.pack.id), "cantidad": "1"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_una_linea_sin_producto_ni_pack_se_rechaza(self):
+        self.assertEqual(self._vender([{"cantidad": "1"}]).status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_un_pack_de_otro_comercio_se_rechaza(self):
+        otro = Comercio.objects.create(nombre="Otro (test)")
+        ajeno = Combo.objects.create(comercio=otro, nombre="Ajeno", precio=Decimal("1000.00"))
+        response = self._vender([{"combo": str(ajeno.id), "cantidad": "1"}])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_un_pack_vacio_se_rechaza(self):
+        vacio = Combo.objects.create(comercio=self.comercio, nombre="Vacío", precio=Decimal("500.00"))
+        response = self._vender([{"combo": str(vacio.id), "cantidad": "1"}])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

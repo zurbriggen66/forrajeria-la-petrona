@@ -8,7 +8,8 @@ from .models import Compra, CompraItem, CompraPago
 class CompraItemInputSerializer(serializers.Serializer):
     producto = serializers.UUIDField()
     cantidad = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
-    costo_unitario = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"))
+    # 4 decimales: los mismos que CompraItem.costo_unitario y Producto.precio_costo.
+    costo_unitario = serializers.DecimalField(max_digits=14, decimal_places=4, min_value=Decimal("0"))
 
 
 class CompraCreateSerializer(serializers.Serializer):

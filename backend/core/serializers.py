@@ -1,3 +1,4 @@
+from django.core.validators import RegexValidator
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -5,10 +6,19 @@ from .models import Comercio, EmpleadoTurno, Perfil, UsuarioComercio
 from .modulos import CLAVES
 
 
+HEX_COLOR = RegexValidator(
+    r"^#[0-9a-fA-F]{6}$",
+    "El color tiene que ser un hexadecimal de seis dígitos, como #2f8fff.",
+)
+
+
 class ComercioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comercio
-        fields = ["id", "nombre", "rubro", "logo_url", "bloqueado"]
+        # color_acento va acá y no sólo en el endpoint de config: /auth/me/
+        # devuelve los comercios, y es de ahí que el shell pinta la app apenas
+        # entra. Sin esto habría un parpadeo con el color viejo en cada carga.
+        fields = ["id", "nombre", "rubro", "logo_url", "bloqueado", "color_acento"]
 
 
 class PerfilMeSerializer(serializers.ModelSerializer):
@@ -71,11 +81,16 @@ class EmpleadoTurnoSerializer(serializers.ModelSerializer):
 
 
 class ComercioUpdateSerializer(serializers.ModelSerializer):
+    # allow_blank: vaciarlo es volver al color del tema, no un error.
+    color_acento = serializers.CharField(
+        max_length=7, required=False, allow_blank=True, validators=[HEX_COLOR],
+    )
+
     class Meta:
         model = Comercio
         fields = [
             "id", "nombre", "cuit", "direccion", "telefono", "email", "logo_url", "rubro",
-            "permitir_venta_sin_stock",
+            "permitir_venta_sin_stock", "color_acento",
         ]
         read_only_fields = ["id"]
 

@@ -63,7 +63,7 @@ export function PresupuestoCobrarModal({ presupuesto, onClose, onCobrado }: {
   }
 
   return (
-    <Modal title={`Cobrar presupuesto de ${presupuesto.cliente_nombre}`} onClose={onClose} wide>
+    <Modal title={`Cobrar presupuesto de ${presupuesto.cliente_nombre}`} onClose={onClose} ancho="lg">
       <div className="flex gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="text-xs text-text-dim">

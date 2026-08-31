@@ -227,3 +227,72 @@ class CompraFiadaTests(APITestCase):
         self.assertEqual(pendientes["facturas_por_pagar"], 1)
         vencida = date(2026, 9, 15) < timezone.localtime(timezone.now()).date()
         self.assertEqual(pendientes["facturas_vencidas"], 1 if vencida else 0)
+
+
+class UltimaCompraDeProductoTests(APITestCase):
+    """El costo de la última compra, que es lo que el formulario muestra al lado
+    de lo que se está cargando para que se vea si el proveedor aumentó."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.otro = Comercio.objects.create(nombre="Otro comercio (test)")
+        self.user = User.objects.create_user(username="dueno-ultima", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+        self.proveedor = Proveedor.objects.create(comercio=self.comercio, nombre="Distribuidora Sur")
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Sahumerio", stock=Decimal("0"),
+            precio_costo=Decimal("0"), precio_venta=Decimal("100"),
+        )
+
+    def _comprar(self, fecha, costo, cantidad="10"):
+        return self.client.post("/api/compras/", {
+            "proveedor": str(self.proveedor.id),
+            "fecha": fecha,
+            "items": [{"producto": str(self.producto.id), "cantidad": cantidad, "costo_unitario": costo}],
+        }, format="json")
+
+    def _ultima(self, producto_id=None):
+        return self.client.get("/api/compras/ultima-de-producto/", {"producto": producto_id or str(self.producto.id)})
+
+    def test_sin_compras_devuelve_null(self):
+        response = self._ultima()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data)
+
+    def test_devuelve_la_mas_reciente_por_fecha_no_por_orden_de_carga(self):
+        """Se puede cargar hoy una factura de la semana pasada: manda la fecha
+        de la compra, no cuándo se tipeó."""
+        self.assertEqual(self._comprar("2026-03-06", "1422.76").status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self._comprar("2026-08-20", "1800.50").status_code, status.HTTP_201_CREATED)
+        # Cargada última pero con fecha vieja: no tiene que ganar.
+        self.assertEqual(self._comprar("2026-01-02", "900").status_code, status.HTTP_201_CREATED)
+
+        datos = self._ultima().data
+        self.assertEqual(datos["fecha"], date(2026, 8, 20))
+        self.assertEqual(Decimal(datos["costo_unitario"]), Decimal("1800.5000"))
+        self.assertEqual(Decimal(datos["cantidad"]), Decimal("10.000"))
+        self.assertEqual(datos["proveedor_nombre"], "Distribuidora Sur")
+
+    def test_no_ve_compras_de_otro_comercio(self):
+        ajeno = Producto.objects.create(
+            comercio=self.otro, nombre="Ajeno", stock=Decimal("0"),
+            precio_costo=Decimal("0"), precio_venta=Decimal("1"),
+        )
+        Compra.objects.create(comercio=self.otro, fecha=date(2026, 8, 20), total=Decimal("500"))
+        response = self._ultima(producto_id=str(ajeno.id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data)
+
+    def test_sin_producto_es_400_y_no_500(self):
+        response = self.client.get("/api/compras/ultima-de-producto/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_acepta_el_costo_de_4_decimales_que_precarga_el_formulario(self):
+        """Producto.precio_costo tiene 4 decimales y el formulario lo precarga
+        tal cual. Con costo_unitario en 2, elegir un producto y guardar sin
+        tocar nada hacía rechazar la compra entera."""
+        response = self._comprar("2026-08-20", "2200.0000", cantidad="1")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("2200.00"))

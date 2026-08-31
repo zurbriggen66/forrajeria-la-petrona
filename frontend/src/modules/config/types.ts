@@ -15,6 +15,8 @@ export interface ComercioConfig {
   logo_url: string
   rubro: string
   permitir_venta_sin_stock: boolean
+  /** Color de marca, "#rrggbb". Vacío = el azul del tema. */
+  color_acento: string
 }
 
 export type ComercioConfigInput = Partial<Omit<ComercioConfig, 'id'>>
@@ -26,8 +28,9 @@ export interface UsuarioComercio {
   email: string
   nombre_completo: string
   rol: string
-  /** Módulos que el Dueño le apagó (claves = rutas del menú). Vacío = ve todo. */
-  modulos_bloqueados: string[]
+  /** Módulos que el Dueño le apagó (claves = rutas del menú). Vacío = ve todo.
+   * Opcional: un backend anterior a esta versión no manda el campo. */
+  modulos_bloqueados?: string[]
   created_at: string
 }
 

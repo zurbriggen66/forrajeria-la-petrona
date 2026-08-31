@@ -53,6 +53,13 @@ class Comercio(BaseModel):
     # todavía está mal cargado, no por falta real de mercadería. Default True
     # a propósito — bloquear por stock es la excepción, no la regla, acá.
     permitir_venta_sin_stock = models.BooleanField(default=True)
+    # Color de la marca del comercio, en hex ("#2f8fff"). Vacío = el azul del
+    # tema. Es UNO solo a propósito: pinta lo que el sistema resalta (botón
+    # principal, ítem activo del menú, foco de los campos, barras del gráfico).
+    # Los otros colores no se tocan porque significan algo — verde es que salió
+    # bien, ámbar es ojo, rojo es error — y dejarlos elegir sería dejar que se
+    # rompa esa lectura.
+    color_acento = models.CharField(max_length=7, blank=True, default="")
 
     def __str__(self):
         return self.nombre

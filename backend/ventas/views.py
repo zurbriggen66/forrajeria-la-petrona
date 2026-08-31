@@ -17,7 +17,7 @@ from core.models import Perfil
 from fiscal.afip import ErrorFiscal
 from fiscal.services import config_vigente, emitir_factura, facturar_si_corresponde
 from kubobots.models import KubobotsCliente
-from productos.models import Producto
+from productos.models import Combo, Producto
 from productos.precios import resolver_precio_item
 
 from .models import Venta, VentaItem, VentaPago
@@ -38,7 +38,9 @@ class VentaViewSet(TenantViewSet):
     queryset = (
         Venta.objects.all()
         .select_related("cliente", "vendedor", "cuenta_pago", "vuelto_cuenta_pago")
-        .prefetch_related("items__producto", "pagos__cuenta_pago")
+        # items__combo además de items__producto: el serializer muestra el
+        # nombre del pack en la línea, y sin esto era una consulta por renglón.
+        .prefetch_related("items__producto", "items__combo", "pagos__cuenta_pago")
         .order_by("-created_at")
     )
     filterset_fields = ["vendedor", "cliente", "cuenta_pago", "metodo_pago", "anulada", "numero_ticket"]
@@ -117,14 +119,39 @@ class VentaViewSet(TenantViewSet):
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            productos_a_actualizar = []
-            for item in venta.items.filter(producto__isnull=False).select_related("producto"):
-                producto = Producto.objects.select_for_update().get(pk=item.producto_id)
-                # `peso_kg` guarda los kg reales descontados (venta suelta o por bolsa);
-                # para productos que no son por peso, cantidad ya está en su unidad.
-                cantidad_a_restaurar = item.peso_kg if item.peso_kg is not None else item.cantidad
-                producto.stock = producto.stock + cantidad_a_restaurar
-                productos_a_actualizar.append(producto)
+            # Cuánto hay que devolverle a cada producto. Se acumula en un dict
+            # y no en una lista de objetos: un producto puede venir suelto Y
+            # dentro de un pack en la misma venta, y ahí las dos devoluciones se
+            # tienen que SUMAR, no pisarse. De paso deja de haber una consulta
+            # por renglón.
+            a_devolver = {}
+
+            def devolver(producto_id, cantidad):
+                a_devolver[producto_id] = a_devolver.get(producto_id, Decimal("0")) + cantidad
+
+            for item in venta.items.prefetch_related("combo__items"):
+                if item.producto_id:
+                    # `peso_kg` guarda los kg reales descontados (venta suelta o
+                    # por bolsa); para productos que no son por peso, cantidad ya
+                    # está en su unidad.
+                    devolver(item.producto_id, item.peso_kg if item.peso_kg is not None else item.cantidad)
+                elif item.combo_id:
+                    # El pack descontó el stock de cada componente al vender, así
+                    # que anularlo tiene que devolver lo mismo.
+                    #
+                    # ponytail: se relee la receta ACTUAL del pack. Si alguien la
+                    # cambió después de la venta, la devolución no coincide con
+                    # lo que se descontó. Para que coincida siempre habría que
+                    # guardar la receta en el ítem de la venta.
+                    for componente in item.combo.items.all():
+                        if componente.producto_id:
+                            devolver(componente.producto_id, componente.cantidad * item.cantidad)
+
+            productos_a_actualizar = list(
+                Producto.objects.select_for_update().filter(comercio=comercio, id__in=a_devolver)
+            )
+            for producto in productos_a_actualizar:
+                producto.stock = producto.stock + a_devolver[producto.id]
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
 
             venta.anulada = True
@@ -213,6 +240,16 @@ class VentaViewSet(TenantViewSet):
         serializer = VentaEditarItemsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        # Los packs quedan afuera de la corrección a propósito: este método
+        # devuelve el stock leyendo item.producto de cada renglón viejo, y un
+        # pack no tiene producto sino varios. Antes de soportarlos acá hay que
+        # replicar el desarmado componente por componente; mientras tanto se
+        # rechaza en vez de dejar el stock mal sin avisar.
+        if any(item["combo"] for item in data["items"]):
+            raise ValidationError({"items": "Todavía no se pueden corregir ventas con packs."})
+        if any(item.combo_id for item in venta.items.all()):
+            raise ValidationError("Esta venta tiene packs y todavía no se puede corregir. Anulala y cargala de nuevo.")
 
         with transaction.atomic():
             cliente = Cliente.objects.select_for_update().get(pk=venta.cliente_id)
@@ -397,7 +434,26 @@ class VentaViewSet(TenantViewSet):
             if caja_sesion is None:
                 raise ValidationError("No hay una caja abierta. Abrí la caja antes de vender.")
 
-            producto_ids = [item["producto"] for item in data["items"]]
+            # Los packs se resuelven primero: hay que saber qué productos los
+            # componen para poder bloquearlos junto con los sueltos y no pedir
+            # el stock en dos tandas (dos ventas simultáneas del mismo pack se
+            # pisarían entre el primer lock y el segundo).
+            combo_ids = [item["combo"] for item in data["items"] if item["combo"]]
+            combos = {}
+            if combo_ids:
+                combos = {
+                    c.id: c
+                    for c in Combo.objects.filter(comercio=comercio, id__in=combo_ids)
+                    .prefetch_related("items__producto")
+                }
+                faltan = [str(i) for i in combo_ids if i not in combos]
+                if faltan:
+                    raise ValidationError({"items": f"El pack {faltan[0]} no existe en este comercio."})
+
+            producto_ids = [item["producto"] for item in data["items"] if item["producto"]]
+            for combo in combos.values():
+                producto_ids.extend(ci.producto_id for ci in combo.items.all() if ci.producto_id)
+
             productos = {
                 p.id: p
                 for p in Producto.objects.select_for_update().filter(comercio=comercio, id__in=producto_ids)
@@ -428,11 +484,60 @@ class VentaViewSet(TenantViewSet):
             total = Decimal("0")
 
             for item in data["items"]:
+                cantidad = item["cantidad"]
+                descuento_pct = item["descuento_pct"]
+
+                if item["combo"]:
+                    # Un pack se cobra como una sola línea, a su propio precio,
+                    # pero descuenta el stock de cada producto que lo compone:
+                    # es lo que lo hace un pack y no un producto más.
+                    combo = combos[item["combo"]]
+                    componentes = list(combo.items.all())
+                    if not componentes:
+                        raise ValidationError({
+                            "items": f'El pack "{combo.nombre}" no tiene productos cargados.',
+                        })
+
+                    costo_pack = Decimal("0")
+                    for componente in componentes:
+                        producto = productos.get(componente.producto_id)
+                        if producto is None:
+                            raise ValidationError({
+                                "items": f'Un producto del pack "{combo.nombre}" ya no existe en este comercio.',
+                            })
+                        baja = componente.cantidad * cantidad
+                        if not comercio.permitir_venta_sin_stock and producto.stock < baja:
+                            raise ValidationError({
+                                "items": (
+                                    f'No hay stock suficiente de "{producto.nombre}" para '
+                                    f'{cantidad} × "{combo.nombre}" (disponible: {producto.stock}).'
+                                ),
+                            })
+                        costo_pack += producto.precio_costo * componente.cantidad
+                        producto.stock = producto.stock - baja
+                        productos_a_actualizar.append(producto)
+
+                    precio_unitario = combo.precio
+                    bruto = precio_unitario * cantidad
+                    subtotal = (bruto * (Decimal("100") - descuento_pct) / Decimal("100")).quantize(Decimal("0.01"))
+                    total += subtotal
+
+                    items_a_crear.append(VentaItem(
+                        combo=combo,
+                        producto=None,
+                        cantidad=cantidad,
+                        peso_kg=None,
+                        descuento_pct=descuento_pct,
+                        precio_unitario=precio_unitario,
+                        costo_unitario=costo_pack.quantize(Decimal("0.01")),
+                        subtotal=subtotal,
+                    ))
+                    continue
+
                 producto = productos.get(item["producto"])
                 if producto is None:
                     raise ValidationError({"items": f"Producto {item['producto']} no existe en este comercio."})
 
-                cantidad = item["cantidad"]
                 precio_unitario, costo_unitario, kg_reales = resolver_precio_item(
                     producto, cantidad, item.get("es_bolsa")
                 )
@@ -447,10 +552,9 @@ class VentaViewSet(TenantViewSet):
                         "items": f'No hay stock suficiente de "{producto.nombre}" (disponible: {producto.stock}).'
                     })
 
-                # Descuento pactado sobre este producto. Se aplica al subtotal
-                # y no a `precio_unitario`, que queda como precio de lista para
-                # que el remito pueda mostrar de cuánto fue la rebaja.
-                descuento_pct = item["descuento_pct"]
+                # El descuento pactado (leído arriba) se aplica al subtotal y no
+                # a `precio_unitario`, que queda como precio de lista para que el
+                # remito pueda mostrar de cuánto fue la rebaja.
                 bruto = precio_unitario * cantidad
                 subtotal = (bruto * (Decimal("100") - descuento_pct) / Decimal("100")).quantize(Decimal("0.01"))
                 total += subtotal
@@ -532,7 +636,13 @@ class VentaViewSet(TenantViewSet):
             for item in items_a_crear:
                 item.venta = venta
             VentaItem.objects.bulk_create(items_a_crear)
-            Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
+            # Deduplicado por id: un producto puede venir suelto Y dentro de un
+            # pack en la misma venta. Es el MISMO objeto en memoria (sale del
+            # dict `productos`), así que el stock ya quedó bien descontado; lo
+            # que no se puede es mandarle la misma fila dos veces a bulk_update.
+            Producto.objects.bulk_update(
+                {p.id: p for p in productos_a_actualizar}.values(), ["stock"],
+            )
 
             # Un movimiento de caja por medio de pago: el arqueo por contenedor
             # se calcula sobre CajaMovimiento.cuenta, así que meter un pago

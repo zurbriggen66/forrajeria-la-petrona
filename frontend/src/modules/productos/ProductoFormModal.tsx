@@ -165,7 +165,7 @@ export function ProductoFormModal({ producto, onClose, onCreated }: {
   }
 
   return (
-    <Modal title={isEdit ? 'Editar producto' : 'Nuevo producto'} onClose={onClose} wide>
+    <Modal title={isEdit ? 'Editar producto' : 'Nuevo producto'} onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <section className="grid grid-cols-2 gap-4">
           <div className="relative">

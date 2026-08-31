@@ -10,7 +10,15 @@ from .models import Venta, VentaItem, VentaPago
 
 
 class VentaItemInputSerializer(serializers.Serializer):
-    producto = serializers.UUIDField()
+    """Una línea de la venta: un producto suelto, o un pack.
+
+    `producto` y `combo` son excluyentes y uno de los dos es obligatorio. Un
+    pack se cobra como una unidad —su propio precio— pero descuenta el stock de
+    cada producto que lo compone (ver VentaViewSet._crear_venta).
+    """
+
+    producto = serializers.UUIDField(required=False, allow_null=True, default=None)
+    combo = serializers.UUIDField(required=False, allow_null=True, default=None)
     cantidad = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
     peso_kg = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, allow_null=True, default=None)
     # True cuando `cantidad` es cantidad de bolsas (no kg sueltos) — ver
@@ -22,6 +30,13 @@ class VentaItemInputSerializer(serializers.Serializer):
     descuento_pct = serializers.DecimalField(
         max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), default=0
     )
+
+    def validate(self, data):
+        if bool(data.get("producto")) == bool(data.get("combo")):
+            raise serializers.ValidationError(
+                "Cada línea lleva un producto o un pack, no los dos ni ninguno."
+            )
+        return data
 
 
 class VentaPagoInputSerializer(serializers.Serializer):
@@ -68,6 +83,9 @@ class VentaCreateSerializer(serializers.Serializer):
 
 class VentaItemSerializer(serializers.ModelSerializer):
     producto_nombre = serializers.CharField(source="producto.nombre", read_only=True, default=None)
+    # Sin esto la línea de un pack salía sin nombre en el ticket y en el
+    # historial: producto_nombre lee producto.nombre, y en un pack no hay uno.
+    combo_nombre = serializers.CharField(source="combo.nombre", read_only=True, default=None)
     unidad_medida = serializers.CharField(source="producto.unidad_medida", read_only=True, default=None)
     bolsa_kg = serializers.DecimalField(
         source="producto.bolsa_kg", max_digits=14, decimal_places=3, read_only=True, default=None
@@ -91,7 +109,7 @@ class VentaItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = VentaItem
         fields = [
-            "id", "producto", "producto_nombre", "combo", "cantidad", "peso_kg",
+            "id", "producto", "producto_nombre", "combo", "combo_nombre", "cantidad", "peso_kg",
             "unidad_medida", "bolsa_kg", "venta_por_peso", "precio_venta", "precio_bolsa",
             "precio_oferta", "oferta_activa", "descuento_pct", "precio_unitario", "costo_unitario", "subtotal",
         ]

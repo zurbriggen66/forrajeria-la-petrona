@@ -52,7 +52,7 @@ export function ClienteFormModal({ cliente, onClose }: { cliente: Cliente | null
   }
 
   return (
-    <Modal title={cliente ? 'Editar cliente' : 'Nuevo cliente'} onClose={onClose} wide>
+    <Modal title={cliente ? 'Editar cliente' : 'Nuevo cliente'} onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Input id="nombre" label="Nombre" required autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} />

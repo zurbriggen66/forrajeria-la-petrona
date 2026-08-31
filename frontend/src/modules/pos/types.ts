@@ -1,5 +1,7 @@
 export interface VentaItemInput {
-  producto: string
+  /** Uno de los dos, nunca los dos: una línea es un producto o un pack. */
+  producto?: string
+  combo?: string
   cantidad: string
   es_bolsa?: boolean
   /** Descuento sobre este producto (0–100). El de la venta entera va aparte. */
@@ -36,6 +38,8 @@ export interface VentaItemResult {
   producto: string
   producto_nombre: string | null
   combo: string | null
+  /** Nombre del pack cuando la línea es un pack (producto_nombre viene null). */
+  combo_nombre: string | null
   cantidad: string
   peso_kg: string | null
   descuento_pct: string
@@ -102,7 +106,15 @@ export interface Cliente {
   kubobots_fid_off: boolean
 }
 
-export interface CartItem {
+interface LineaBase {
+  cantidad: string
+  /** Descuento sobre esta línea, en % (0–100). '' o '0' = sin descuento. */
+  descuentoPct: string
+}
+
+/** Un producto suelto (o su envase cerrado, con `esBolsa`). */
+export interface CartItemProducto extends LineaBase {
+  tipo: 'producto'
   producto: {
     id: string
     nombre: string
@@ -117,8 +129,26 @@ export interface CartItem {
     precio_bolsa: string | null
     bolsa_kg: string | null
   }
-  cantidad: string
   esBolsa: boolean
-  /** Descuento sobre esta línea, en % (0–100). '' o '0' = sin descuento. */
-  descuentoPct: string
 }
+
+/** Un pack: se cobra a su propio precio como una sola línea, y el servidor
+ * descuenta el stock de cada producto que lo compone. */
+export interface CartItemPack extends LineaBase {
+  tipo: 'pack'
+  pack: {
+    id: string
+    nombre: string
+    precio: string
+    /** Cuántos entran en el stock de hoy, para avisar antes de cobrar. */
+    armables: number
+    /** "10× Balanceado + 12× Huevo", para la fila del carrito y el ticket. */
+    detalle: string
+  }
+}
+
+/** Una línea del carrito. Es una unión discriminada a propósito: un pack no
+ * tiene producto, ni bolsa, ni stock propio, y dejarlos opcionales hacía que
+ * cada lectura tuviera que adivinar. Con `tipo` el compilador marca todos los
+ * lugares que faltan contemplar. */
+export type CartItem = CartItemProducto | CartItemPack

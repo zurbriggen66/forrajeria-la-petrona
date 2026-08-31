@@ -115,7 +115,7 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
   }
 
   return (
-    <Modal title={`Corregir venta #${venta.numero_ticket ?? '—'}`} onClose={onClose} wide>
+    <Modal title={`Corregir venta #${venta.numero_ticket ?? '—'}`} onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <p className="text-xs text-text-dim">
           Lo ya cobrado en efectivo, tarjeta o transferencia no se toca: la diferencia se suma o

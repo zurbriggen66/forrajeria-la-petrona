@@ -243,3 +243,42 @@ class ModulosPorEmpleadoTests(APITestCase):
             f"/api/auth/usuarios/{self.relacion.id}/", {"modulos_bloqueados": ["/inventado"]}, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ColorDeMarcaTests(MultiSucursalMixin, APITestCase):
+    """El color que elige el comercio en Config > Apariencia."""
+
+    def _pintar(self, color, sucursal=None):
+        return self.client.patch(
+            "/api/auth/comercio/", {"color_acento": color}, format="json",
+            HTTP_X_COMERCIO_ID=str((sucursal or self.sucursal_1).id),
+        )
+
+    def test_se_guarda_y_lo_devuelve_me_para_pintar_el_shell(self):
+        response = self._pintar("#ffc21a")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["color_acento"], "#ffc21a")
+        # El shell pinta la app con lo que trae /auth/me/: si el color no viaja
+        # ahí, al entrar se ve el color viejo hasta abrir Config.
+        me = self.client.get("/api/auth/me/", HTTP_X_COMERCIO_ID=str(self.sucursal_1.id))
+        self.assertEqual(me.data["comercios"][0]["color_acento"], "#ffc21a")
+
+    def test_vacio_vuelve_al_color_del_tema(self):
+        self._pintar("#ffc21a")
+        response = self._pintar("")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["color_acento"], "")
+
+    def test_rechaza_lo_que_no_es_un_hex(self):
+        for malo in ["rojo", "#12345", "#gggggg", "2f8fff; background:url(x)"]:
+            response = self._pintar(malo)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, malo)
+
+    def test_el_color_es_por_sucursal(self):
+        """Dos sucursales del mismo dueño pueden tener colores distintos."""
+        self._pintar("#ffc21a", self.sucursal_1)
+        self._pintar("#22c55e", self.sucursal_2)
+        self.sucursal_1.refresh_from_db()
+        self.sucursal_2.refresh_from_db()
+        self.assertEqual(self.sucursal_1.color_acento, "#ffc21a")
+        self.assertEqual(self.sucursal_2.color_acento, "#22c55e")

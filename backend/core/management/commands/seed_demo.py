@@ -22,7 +22,10 @@ from proveedores.models import Proveedor
 
 COMERCIO_DEMO_NOMBRE = "Forrajería La Central (demo)"
 DUENO_EMAIL = "dueno@demo.kubo"
-DUENO_PASSWORD = "kubo-demo-1234"  # sólo para desarrollo local, nunca en producción
+# Usuario/contraseña de login (campo "Usuario" del login, no el email) — sólo
+# para desarrollo local, nunca en producción.
+DUENO_USERNAME = "lapetrona"
+DUENO_PASSWORD = "gaston2026"
 
 CATEGORIAS = [
     "Alimento Balanceado", "Semillas y Granos", "Agroquímicos y Fertilizantes",
@@ -106,7 +109,7 @@ class Command(BaseCommand):
 
         User = get_user_model()
         user, created = User.objects.get_or_create(
-            username=DUENO_EMAIL,
+            username=DUENO_USERNAME,
             defaults={"email": DUENO_EMAIL, "is_staff": True, "is_superuser": True},
         )
         if created:
@@ -173,5 +176,5 @@ class Command(BaseCommand):
             f"{len(CLIENTES)} clientes, {len(proveedores)} proveedores, {len(CUENTAS_PAGO)} cuentas de pago."
         ))
         self.stdout.write(self.style.SUCCESS(
-            f"Login demo -> usuario: {DUENO_EMAIL} / password: {DUENO_PASSWORD}"
+            f"Login demo -> usuario: {DUENO_USERNAME} / password: {DUENO_PASSWORD}"
         ))

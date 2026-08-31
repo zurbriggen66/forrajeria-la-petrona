@@ -5,6 +5,7 @@ import type {
   AplicarAjusteInput,
   Categoria,
   Combo,
+  ComboInput,
   Paginated,
   Producto,
   ProductoInput,
@@ -128,11 +129,15 @@ export function useDeleteProducto() {
   })
 }
 
-export function useCombos() {
+/** `activo` filtra: el POS sólo ofrece los packs activos, la pantalla de packs
+ * los muestra todos. */
+export function useCombos(activo?: boolean) {
   return useQuery({
-    queryKey: ['combos'],
+    queryKey: ['combos', activo ?? 'todos'],
     queryFn: async () => {
-      const { data } = await api.get<Paginated<Combo>>('/combos/', { params: { page_size: 100 } })
+      const { data } = await api.get<Paginated<Combo>>('/combos/', {
+        params: { page_size: 100, ...(activo === undefined ? {} : { activo }) },
+      })
       return data.results
     },
   })
@@ -141,9 +146,33 @@ export function useCombos() {
 export function useCreateCombo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { nombre: string; descripcion?: string; precio: string; items: { producto: string; cantidad: string }[] }) => {
+    mutationFn: async (input: ComboInput) => {
       const { data } = await api.post<Combo>('/combos/', input)
       return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['combos'] }),
+  })
+}
+
+/** Editar un pack ya armado. El endpoint existía desde siempre
+ * (ComboSerializer.update reemplaza los ítems), pero el front nunca lo llamaba:
+ * un pack mal cargado había que borrarlo y rehacerlo. */
+export function useUpdateCombo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: string; input: ComboInput }) => {
+      const { data } = await api.put<Combo>(`/combos/${id}/`, input)
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['combos'] }),
+  })
+}
+
+export function useDeleteCombo() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/combos/${id}/`)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['combos'] }),
   })

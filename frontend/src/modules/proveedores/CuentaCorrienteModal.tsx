@@ -20,7 +20,7 @@ export function CuentaCorrienteModal({ proveedor, onClose }: { proveedor: Provee
   const saldo = Number(proveedor.saldo_actual)
 
   return (
-    <Modal title={`Cuenta corriente — ${proveedor.nombre}`} onClose={onClose} wide>
+    <Modal title={`Cuenta corriente — ${proveedor.nombre}`} onClose={onClose} ancho="lg">
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between rounded-xl border border-border bg-surface-2 p-4">
           <div>

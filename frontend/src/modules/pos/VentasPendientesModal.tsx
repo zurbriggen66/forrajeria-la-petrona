@@ -43,7 +43,7 @@ export function VentasPendientesModal({ onClose, onSincronizar, sincronizando }:
   }
 
   return (
-    <Modal title="Ventas guardadas sin conexión" onClose={onClose} wide>
+    <Modal title="Ventas guardadas sin conexión" onClose={onClose} ancho="lg">
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-text-dim">

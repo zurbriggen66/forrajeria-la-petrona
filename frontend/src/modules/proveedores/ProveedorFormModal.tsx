@@ -45,7 +45,7 @@ export function ProveedorFormModal({ proveedor, onClose }: { proveedor: Proveedo
   }
 
   return (
-    <Modal title={proveedor ? 'Editar proveedor' : 'Nuevo proveedor'} onClose={onClose} wide>
+    <Modal title={proveedor ? 'Editar proveedor' : 'Nuevo proveedor'} onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Input id="nombre" label="Nombre" required autoFocus value={nombre} onChange={(e) => setNombre(e.target.value)} />

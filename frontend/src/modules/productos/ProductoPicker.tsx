@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Loader2, Search, X } from 'lucide-react'
 import { formatMoney } from '../../lib/format'
 import { useProductoSearch } from './api'
@@ -25,6 +26,13 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
   const [abierto, setAbierto] = useState(false)
   const [marcado, setMarcado] = useState(0)
   const boxRef = useRef<HTMLDivElement>(null)
+  const listaRef = useRef<HTMLDivElement>(null)
+  // Dónde dibujar el desplegable. Va en un portal a <body> con position:fixed
+  // porque como hijo absolute lo recortaba cualquier ancestro con overflow: el
+  // formulario de packs y el de compras tienen los renglones en un contenedor
+  // con scroll propio, y ahí la lista de resultados quedaba invisible — se
+  // podía escribir pero no elegir nada.
+  const [caja, setCaja] = useState<{ top: number; left: number; width: number; arriba: boolean } | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query), 250)
@@ -35,7 +43,11 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setAbierto(false)
+      const destino = e.target as Node
+      // También el portal: no es hijo de boxRef, y sin esto el mousedown sobre
+      // un resultado cerraba la lista antes de que llegara el click.
+      if (boxRef.current?.contains(destino) || listaRef.current?.contains(destino)) return
+      setAbierto(false)
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
@@ -46,6 +58,31 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
   // Va acá arriba, antes de cualquier return: un hook salteado en un render
   // rompe el orden y React tira "rendered fewer hooks than expected".
   useEffect(() => setMarcado(0), [resultados])
+
+  const mostrarDropdown = abierto && debounced.trim().length >= 1
+
+  // Se remide al abrir y mientras se scrollea: el campo puede estar dentro de
+  // un contenedor con scroll, y la lista tiene que seguirlo.
+  useEffect(() => {
+    if (!mostrarDropdown) {
+      setCaja(null)
+      return
+    }
+    function medir() {
+      const r = boxRef.current?.getBoundingClientRect()
+      if (!r) return
+      const abajo = window.innerHeight - r.bottom
+      setCaja({ top: r.top, left: r.left, width: r.width, arriba: abajo < 260 && r.top > abajo })
+    }
+    medir()
+    // capture: así también entran los scrolls de los contenedores internos.
+    window.addEventListener('scroll', medir, true)
+    window.addEventListener('resize', medir)
+    return () => {
+      window.removeEventListener('scroll', medir, true)
+      window.removeEventListener('resize', medir)
+    }
+  }, [mostrarDropdown])
 
   if (producto) {
     return (
@@ -95,7 +132,6 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
     elegir(exacto ?? lista[marcado] ?? lista[0])
   }
 
-  const mostrarDropdown = abierto && debounced.trim().length >= 1
 
   return (
     <div ref={boxRef} className="relative">
@@ -112,8 +148,18 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
         />
       </div>
 
-      {mostrarDropdown && (
-        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+      {mostrarDropdown && caja && createPortal(
+        <div
+          ref={listaRef}
+          style={{
+            position: 'fixed',
+            left: caja.left,
+            width: caja.width,
+            ...(caja.arriba
+              ? { bottom: window.innerHeight - caja.top + 4 }
+              : { top: caja.top + (boxRef.current?.offsetHeight ?? 38) + 4 }),
+          }}
+          className="z-50 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface shadow-xl">
           {isFetching ? (
             <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-text-dim">
               <Loader2 size={12} className="animate-spin" /> Buscando…
@@ -144,7 +190,8 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
               </button>
             ))
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -21,7 +21,7 @@ export function ClienteSelectorModal({ onSeleccionar, onClose }: {
   const { data, isLoading } = useClientesBrowse(busquedaDiferida, pagina)
 
   return (
-    <Modal title="Elegir cliente" onClose={onClose} wide>
+    <Modal title="Elegir cliente" onClose={onClose} ancho="lg">
       <div className="flex flex-col gap-3">
         <Input
           id="cliente-selector-busqueda" placeholder="Nombre, teléfono o CUIT…" autoFocus

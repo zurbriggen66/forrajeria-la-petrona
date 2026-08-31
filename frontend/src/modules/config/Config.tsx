@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Check, CircleUserRound, Download, Loader2, MessageCircle,
-  Plus, QrCode, Receipt, SlidersHorizontal, Sparkles, Trash2, UserRound,
+  Palette, Plus, QrCode, Receipt, SlidersHorizontal, Sparkles, Trash2, UserRound,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -14,6 +14,7 @@ import { useFiscalConfig, useGuardarFiscalConfig } from '../fiscal/api'
 import { ColaFiscal } from '../fiscal/ColaFiscal'
 import { CONDICIONES_IVA, MEDIOS_FACTURABLES } from '../fiscal/types'
 import { CuentaAsistente } from '../asistente/CuentaAsistente'
+import { Apariencia } from './Apariencia'
 import { InvitarUsuarioModal } from './InvitarUsuarioModal'
 import { PermisosUsuarioModal } from './PermisosUsuarioModal'
 import {
@@ -439,6 +440,14 @@ function FacturacionAutomatica() {
   )
 }
 
+/** "Todos" o "12 de 18". `modulos_bloqueados` puede no venir si el backend
+ * todavía no está actualizado, así que nunca se lee sin respaldo. */
+function resumenModulos(u: UsuarioComercio) {
+  const bloqueados = u.modulos_bloqueados ?? []
+  if (u.rol === 'Dueño' || bloqueados.length === 0) return 'Todos'
+  return `${MODULOS_OPCIONALES.length - bloqueados.length} de ${MODULOS_OPCIONALES.length}`
+}
+
 function Usuarios() {
   const { toast } = useToast()
   const { data: usuarios, isLoading } = useUsuariosComercio()
@@ -500,11 +509,7 @@ function Usuarios() {
                         className="flex items-center gap-1.5 text-sm text-text-dim hover:text-accent"
                       >
                         <SlidersHorizontal size={14} />
-                        {u.rol === 'Dueño'
-                          ? 'Todos'
-                          : u.modulos_bloqueados.length === 0
-                            ? 'Todos'
-                            : `${MODULOS_OPCIONALES.length - u.modulos_bloqueados.length} de ${MODULOS_OPCIONALES.length}`}
+                        {resumenModulos(u)}
                       </button>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -544,10 +549,11 @@ function Respaldo() {
   )
 }
 
-type Pestaña = 'cuenta' | 'fiscal' | 'whatsapp' | 'ia' | 'respaldo'
+type Pestaña = 'cuenta' | 'apariencia' | 'fiscal' | 'whatsapp' | 'ia' | 'respaldo'
 
 const TODAS_LAS_TABS: { key: Pestaña; label: string; icon: typeof CircleUserRound }[] = [
   { key: 'cuenta', label: 'Mi cuenta', icon: CircleUserRound },
+  { key: 'apariencia', label: 'Apariencia', icon: Palette },
   { key: 'fiscal', label: 'Fiscal', icon: Receipt },
   { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { key: 'ia', label: 'IA', icon: Sparkles },
@@ -598,6 +604,8 @@ export function Config() {
           )}
         </div>
       )}
+
+      {tab === 'apariencia' && esDueño && <Apariencia />}
 
       {tab === 'fiscal' && esDueño && (
         <div className="flex flex-col gap-8">

@@ -105,7 +105,7 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   const guardando = crear.isPending || actualizar.isPending
 
   return (
-    <Modal title={esEdicion ? 'Editar reparto' : 'Nuevo reparto'} onClose={onClose} wide>
+    <Modal title={esEdicion ? 'Editar reparto' : 'Nuevo reparto'} onClose={onClose} ancho="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <section className="grid grid-cols-2 gap-4">
           <div className="relative">

@@ -286,3 +286,210 @@ class CostoPorEnvaseCerradoTests(APITestCase):
         response = self._crear("2458.266666666667")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("precio_costo", response.data)
+
+
+class AjustePrecioSeleccionadoTests(APITestCase):
+    """Aumentos eligiendo producto por producto en la galería, con un valor
+    general y overrides individuales."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.otro = Comercio.objects.create(nombre="Otro comercio (test)")
+        self.user = User.objects.create_user(username="dueno-sel", password="testpass123")
+        Perfil.objects.create(user=self.user, comercio=self.comercio, nombre_completo="Dueño", rol="Dueño")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+        def producto(nombre, precio, **extra):
+            return Producto.objects.create(
+                comercio=self.comercio, nombre=nombre, categoria="Alimento",
+                precio_venta=Decimal(precio), **extra,
+            )
+
+        self.a = producto("Balanceado A", "1000.00")
+        self.b = producto("Balanceado B", "2000.00")
+        self.c = producto("Balanceado C", "3000.00")
+        self.ajeno = Producto.objects.create(
+            comercio=self.otro, nombre="Ajeno", categoria="Alimento", precio_venta=Decimal("1000.00"),
+        )
+
+    def _aplicar(self, payload):
+        return self.client.post("/api/ajustes-precios/", payload, format="json")
+
+    def _precio(self, producto):
+        producto.refresh_from_db()
+        return producto.precio_venta
+
+    def test_solo_toca_los_elegidos_aunque_compartan_categoria(self):
+        response = self._aplicar({
+            "tipo": "porcentaje", "valor": "10", "categoria": "Alimento",
+            "productos": [{"producto": str(self.a.id)}, {"producto": str(self.c.id)}],
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["cant_productos"], 2)
+        self.assertEqual(self._precio(self.a), Decimal("1100.00"))
+        self.assertEqual(self._precio(self.c), Decimal("3300.00"))
+        # B está en la misma categoría pero no se eligió: no se toca.
+        self.assertEqual(self._precio(self.b), Decimal("2000.00"))
+
+    def test_valor_individual_le_gana_al_general(self):
+        response = self._aplicar({
+            "tipo": "porcentaje", "valor": "10",
+            "productos": [
+                {"producto": str(self.a.id)},                    # va con el 10%
+                {"producto": str(self.b.id), "valor": "25"},     # el suyo
+                {"producto": str(self.c.id), "valor": "0"},      # 0 = no lo toques
+            ],
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(self._precio(self.a), Decimal("1100.00"))
+        self.assertEqual(self._precio(self.b), Decimal("2500.00"))
+        # Un 0 individual es un valor válido, no un "vacío" que caiga al general.
+        self.assertEqual(self._precio(self.c), Decimal("3000.00"))
+
+    def test_descuento_es_un_valor_negativo(self):
+        self._aplicar({"tipo": "porcentaje", "valor": "-20", "productos": [{"producto": str(self.a.id)}]})
+        self.assertEqual(self._precio(self.a), Decimal("800.00"))
+
+    def test_un_descuento_grande_no_deja_el_precio_en_negativo(self):
+        self._aplicar({"tipo": "monto", "valor": "-5000", "productos": [{"producto": str(self.a.id)}]})
+        self.assertEqual(self._precio(self.a), Decimal("0.00"))
+
+    def test_rechaza_un_producto_de_otro_comercio(self):
+        """Sin esto el aumento se aplicaba a menos productos de los elegidos y
+        el dueño creía que había salido completo."""
+        response = self._aplicar({
+            "tipo": "porcentaje", "valor": "10",
+            "productos": [{"producto": str(self.a.id)}, {"producto": str(self.ajeno.id)}],
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._precio(self.a), Decimal("1000.00"))
+        self.assertEqual(self._precio(self.ajeno), Decimal("1000.00"))
+
+    def test_rechaza_productos_repetidos(self):
+        response = self._aplicar({
+            "tipo": "porcentaje", "valor": "10",
+            "productos": [{"producto": str(self.a.id)}, {"producto": str(self.a.id)}],
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_el_historial_guarda_que_fue_una_seleccion_manual(self):
+        self._aplicar({
+            "tipo": "porcentaje", "valor": "10", "categoria": "Alimento",
+            "productos": [{"producto": str(self.a.id)}, {"producto": str(self.b.id), "valor": "25"}],
+        })
+        ajuste = AjustePrecio.objects.latest("created_at")
+        self.assertEqual(len(ajuste.filtro["productos"]), 2)
+        self.assertEqual(ajuste.filtro["valores_individuales"], {str(self.b.id): "25.00"})
+
+    def test_sin_seleccion_sigue_andando_el_filtro_de_siempre(self):
+        response = self._aplicar({"tipo": "porcentaje", "valor": "10", "categoria": "Alimento"})
+        self.assertEqual(response.data["cant_productos"], 3)
+        self.assertEqual(self._precio(self.b), Decimal("2200.00"))
+
+    def test_la_galeria_recibe_la_foto_del_producto(self):
+        self.a.imagen_url = "https://ejemplo.test/balanceado.jpg"
+        self.a.save(update_fields=["imagen_url"])
+        response = self.client.get(f"/api/productos/{self.a.id}/")
+        self.assertEqual(response.data["imagen_url"], "https://ejemplo.test/balanceado.jpg")
+
+
+class ComboArmadoTests(APITestCase):
+    """Los números que el armador de packs necesita: cuánto costaría suelto,
+    cuánto se le regala al cliente, el margen y cuántos packs entran en el
+    stock de hoy."""
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="dueno-packs", password="testpass123")
+        Perfil.objects.create(user=self.user, comercio=self.comercio, nombre_completo="Dueño", rol="Dueño")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+
+        # "10 balanceados por 100.000": suelto son $115.000 (10 × 11.500).
+        self.balanceado = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado", precio_venta=Decimal("11500.00"),
+            precio_costo=Decimal("8000.0000"), stock=Decimal("25"),
+        )
+        # "100 huevos por 20.000": suelto son $25.000 (100 × 250).
+        self.huevo = Producto.objects.create(
+            comercio=self.comercio, nombre="Huevo", precio_venta=Decimal("250.00"),
+            precio_costo=Decimal("150.0000"), stock=Decimal("450"),
+        )
+
+    def _crear(self, nombre, precio, items):
+        return self.client.post("/api/combos/", {
+            "nombre": nombre, "descripcion": "", "precio": precio, "items": items,
+        }, format="json")
+
+    def test_diez_balanceados_por_cien_mil(self):
+        response = self._crear("10 balanceados", "100000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "10"},
+        ])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        d = response.data
+        self.assertEqual(Decimal(d["precio_suelto"]), Decimal("115000.00"))
+        self.assertEqual(Decimal(d["costo"]), Decimal("80000.00"))
+        # Le regala 15.000 sobre 115.000 = 13.04%
+        self.assertEqual(d["descuento_pct"], 13.04)
+        # Margen sobre el precio del pack: (100.000 - 80.000) / 100.000
+        self.assertEqual(d["margen_pct"], 20.0)
+        # 25 de stock / 10 por pack = 2 packs enteros.
+        self.assertEqual(d["armables"], 2)
+
+    def test_cien_huevos_por_veinte_mil(self):
+        d = self._crear("100 huevos", "20000.00", [
+            {"producto": str(self.huevo.id), "cantidad": "100"},
+        ]).data
+        self.assertEqual(Decimal(d["precio_suelto"]), Decimal("25000.00"))
+        self.assertEqual(d["descuento_pct"], 20.0)
+        self.assertEqual(d["armables"], 4)
+
+    def test_armables_lo_decide_el_componente_mas_escaso(self):
+        """Con 25 balanceados y 450 huevos, un pack de 10 balanceados + 12
+        huevos sale 2 veces: sobran huevos pero no balanceado."""
+        d = self._crear("Combo granja", "120000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "10"},
+            {"producto": str(self.huevo.id), "cantidad": "12"},
+        ]).data
+        self.assertEqual(d["armables"], 2)
+
+    def test_sin_stock_de_un_componente_no_se_arma_ninguno(self):
+        self.balanceado.stock = Decimal("3")
+        self.balanceado.save(update_fields=["stock"])
+        d = self._crear("10 balanceados", "100000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "10"},
+        ]).data
+        self.assertEqual(d["armables"], 0)
+
+    def test_un_pack_mas_caro_que_suelto_da_descuento_negativo(self):
+        """No se bloquea —el dueño manda— pero tiene que poder verlo: es casi
+        siempre un error de carga."""
+        d = self._crear("Mal cargado", "130000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "10"},
+        ]).data
+        self.assertLess(d["descuento_pct"], 0)
+
+    def test_editar_un_pack_reemplaza_sus_productos(self):
+        combo_id = self._crear("Pack", "50000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "5"},
+        ]).data["id"]
+        response = self.client.put(f"/api/combos/{combo_id}/", {
+            "nombre": "Pack corregido", "descripcion": "", "precio": "20000.00",
+            "items": [{"producto": str(self.huevo.id), "cantidad": "100"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["nombre"], "Pack corregido")
+        self.assertEqual(len(response.data["items"]), 1)
+        self.assertEqual(response.data["items"][0]["producto_nombre"], "Huevo")
+        self.assertEqual(response.data["armables"], 4)
+
+    def test_el_item_trae_precio_costo_y_stock_del_componente(self):
+        """El formulario de edición no tiene los Producto completos: los saca
+        de acá."""
+        item = self._crear("Pack", "50000.00", [
+            {"producto": str(self.balanceado.id), "cantidad": "5"},
+        ]).data["items"][0]
+        self.assertEqual(Decimal(item["producto_precio_venta"]), Decimal("11500.00"))
+        self.assertEqual(Decimal(item["producto_precio_costo"]), Decimal("8000.0000"))
+        self.assertEqual(Decimal(item["producto_stock"]), Decimal("25.000"))

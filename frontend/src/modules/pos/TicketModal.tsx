@@ -9,7 +9,7 @@ import { useFacturarVenta } from '../fiscal/api'
 import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
-import { subtotalLinea } from './precio'
+import { claveLinea, subtotalLinea } from './precio'
 import type { CartItem, VentaResult } from './types'
 
 export type TicketData =
@@ -60,14 +60,18 @@ export function TicketModal({ data, onNuevaVenta }: { data: TicketData; onNuevaV
                 <div key={item.id} className="flex justify-between">
                   {/* Number(): el backend manda "1.000" (3 decimales) y crudo
                       se lee como mil en vez de uno. */}
-                  <span className="text-text-dim">{Number(item.cantidad)}× {item.producto_nombre}</span>
+                  <span className="text-text-dim">
+                    {Number(item.cantidad)}× {item.producto_nombre ?? item.combo_nombre ?? '—'}
+                  </span>
                   <span className="tabular-nums text-text">{formatMoney(item.subtotal)}</span>
                 </div>
               ))
             : data.kind === 'queued' && data.items.map((item) => (
-                <div key={`${item.producto.id}:${item.esBolsa}`} className="flex justify-between">
+                <div key={claveLinea(item)} className="flex justify-between">
                   <span className="text-text-dim">
-                    {item.cantidad}× {item.producto.nombre}{item.esBolsa && ` (bolsa ${Number(item.producto.bolsa_kg)}kg)`}
+                    {item.cantidad}× {item.tipo === 'pack'
+                      ? item.pack.nombre
+                      : <>{item.producto.nombre}{item.esBolsa && ` (bolsa ${Number(item.producto.bolsa_kg)}kg)`}</>}
                   </span>
                   <span className="tabular-nums text-text">
                     {formatMoney(subtotalLinea(item))}

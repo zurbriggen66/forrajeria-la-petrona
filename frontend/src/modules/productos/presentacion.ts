@@ -43,3 +43,35 @@ export function etiquetaEnvase(unidad: string | null | undefined, contenido: str
   const sufijo = unidad === 'unidad' ? 'u' : unidad ?? ''
   return `${nombre} ${cantidad}${sufijo}`
 }
+
+/** Cuánto trae el envase cerrado (kg, metros, unidades), o null si el producto
+ * no tiene presentación cerrada definida.
+ *
+ * No es lo mismo que `tieneBolsa` del POS: ese además exige que ya tenga
+ * precio de bolsa, porque para vender hace falta. Acá alcanza con que el
+ * envase exista — al comprar se carga por bolsas igual, y al ponerle precio
+ * justamente queremos poder ponerle el primero.
+ */
+export function contenidoEnvase(
+  producto: { venta_por_peso: boolean; bolsa_kg: string | null },
+): number | null {
+  if (!producto.venta_por_peso) return null
+  const contenido = Number(producto.bolsa_kg)
+  return Number.isFinite(contenido) && contenido > 0 ? contenido : null
+}
+
+/** Pasa una cantidad tipeada a unidad_medida, que es como el sistema guarda el
+ * stock y el costo.
+ *
+ * La factura del proveedor dice "50 bolsas" y el stock va en kg: sin esta
+ * traducción, cargar 50 bolsas de 25 kg metía 50 kg en el inventario en vez de
+ * 1.250, y el costo por kg salía 25 veces más caro.
+ *
+ * `contenido` null (producto sin envase cerrado) o `enEnvase` false devuelven
+ * la cantidad tal cual: ya está en unidad_medida.
+ */
+export function aUnidadDeMedida(cantidad: number, enEnvase: boolean, contenido: number | null): number {
+  if (!Number.isFinite(cantidad)) return 0
+  if (!enEnvase || !contenido) return cantidad
+  return cantidad * contenido
+}

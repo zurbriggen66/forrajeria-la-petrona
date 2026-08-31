@@ -60,6 +60,36 @@ class CompraViewSet(TenantViewSet):
         compra = self._crear_compra(comercio, serializer.validated_data)
         return Response(CompraSerializer(compra).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=False, methods=["get"], url_path="ultima-de-producto")
+    def ultima_de_producto(self, request):
+        """Última vez que se compró un producto: cuándo, a cuánto la unidad y
+        cuántas unidades.
+
+        Es el dato que decide si el proveedor te aumentó: el formulario de
+        compra lo muestra al lado de lo que estás cargando ahora. Producto.
+        precio_costo guarda el último costo pero no la fecha ni la cantidad, y
+        sin eso "1.422,76" no dice nada — puede ser de ayer o del año pasado.
+        """
+        comercio = resolver_comercio_activo(request)
+        producto_id = request.query_params.get("producto")
+        if not producto_id:
+            raise ValidationError({"producto": "Falta el id del producto."})
+
+        item = (
+            CompraItem.objects.filter(compra__comercio=comercio, producto_id=producto_id)
+            .select_related("compra")
+            .order_by("-compra__fecha", "-compra__created_at")
+            .first()
+        )
+        if item is None:
+            return Response(None)
+        return Response({
+            "fecha": item.compra.fecha,
+            "costo_unitario": str(item.costo_unitario),
+            "cantidad": str(item.cantidad),
+            "proveedor_nombre": item.compra.proveedor.nombre if item.compra.proveedor_id else None,
+        })
+
     @action(detail=True, methods=["post"])
     def pagar(self, request, pk=None):
         """Registrar un pago (total o parcial) de una compra fiada.

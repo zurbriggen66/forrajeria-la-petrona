@@ -74,3 +74,12 @@ export interface CompraFiltros {
   fecha_hasta?: string
   pagado?: boolean
 }
+
+/** Última vez que se compró un producto — GET /compras/ultima-de-producto/.
+ * null cuando nunca se compró. */
+export interface UltimaCompraProducto {
+  fecha: string
+  costo_unitario: string
+  cantidad: string
+  proveedor_nombre: string | null
+}

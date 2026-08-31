@@ -209,7 +209,7 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   }
 
   return (
-    <Modal title={cliente.nombre} onClose={onClose} wide>
+    <Modal title={cliente.nombre} onClose={onClose} ancho="lg">
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-dim">
           <span>{cliente.telefono || cliente.celular || 'Sin teléfono'} · {cliente.email || 'sin email'}</span>

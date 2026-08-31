@@ -84,21 +84,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Grilla fina tipo plano técnico + resplandor difuso arriba a la izquierda:
- * lee "panel de control" en vez de superficie plana, sin restarle
- * legibilidad a lo que va encima (tablas y tarjetas son opacas). Va en una
- * clase aparte (no en body) porque el layout y el login pintan su propio
- * fondo opaco de punta a punta, que taparía cualquier textura puesta en
- * body detrás de ellos. */
-.fondo-tecnico {
-  background-image:
-    radial-gradient(ellipse 1100px 600px at 12% -10%, rgb(255 255 255 / 3.5%), transparent),
-    linear-gradient(rgb(255 255 255 / 2.2%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 2.2%) 1px, transparent 1px);
-  background-size: 100% 100%, 32px 32px, 32px 32px;
-  background-attachment: fixed;
-}
-
 #root {
   min-height: 100svh;
 }

@@ -39,7 +39,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="fondo-tecnico relative flex min-h-svh items-center justify-center overflow-hidden bg-bg px-4">
+    <div className="relative flex min-h-svh items-center justify-center overflow-hidden bg-bg px-4">
       <div
         aria-hidden
         className="ambient-blob pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-brand opacity-[0.12] blur-[120px]"

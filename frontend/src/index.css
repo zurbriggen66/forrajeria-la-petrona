@@ -28,6 +28,10 @@
   --color-accent-ink: #001328;
   --color-accent-2: #00e0a8;
   --color-warning: #ffc21a;
+  /* Azul fijo para estados "en curso" (el semáforo de repartos). No usa
+     --color-accent a propósito: ése lo elige el comercio en Config, y un
+     semáforo que cambia de color con la marca deja de ser un semáforo. */
+  --color-info: #4d94ff;
   --color-danger: #ff4444;
   --color-text: #eef1f7;
   --color-text-dim: #8792a8;

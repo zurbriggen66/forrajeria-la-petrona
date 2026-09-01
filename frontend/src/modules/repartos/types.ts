@@ -44,6 +44,11 @@ export interface Reparto {
   repartidor: string | null
   repartidor_nombre: string | null
   notas: string
+  /** Con qué se va a cobrar. null + a_cuenta_corriente false = sin definir. */
+  cuenta_pago: string | null
+  cuenta_pago_nombre: string | null
+  /** Va a la cuenta del cliente: el repartidor no cobra nada. */
+  a_cuenta_corriente: boolean
   subtotal: string
   costo_envio: string
   descuento: string
@@ -70,6 +75,8 @@ export interface RepartoInput {
   fecha: string
   estado?: EstadoReparto
   notas?: string
+  cuenta_pago?: string | null
+  a_cuenta_corriente?: boolean
   costo_envio: string
   descuento: string
   items: RepartoItemInput[]

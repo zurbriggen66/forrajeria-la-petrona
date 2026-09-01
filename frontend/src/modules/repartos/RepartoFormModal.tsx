@@ -4,10 +4,13 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Modal } from '../../components/ui/Modal'
+import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseDecimal, redondearCantidad } from '../../lib/format'
+import { useCuentasPago } from '../caja/api'
 import { useClientesSearch } from '../pos/api'
+import { CUENTA_CORRIENTE } from '../pos/PaymentPanel'
 import { precioProducto } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
@@ -94,6 +97,12 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   const [costoEnvio, setCostoEnvio] = useState(reparto?.costo_envio ?? '0')
   const [descuento, setDescuento] = useState(reparto?.descuento ?? '0')
   const [notas, setNotas] = useState(reparto?.notas ?? '')
+  // Un solo campo para las dos cosas, igual que en el POS: el valor es el id de
+  // una cuenta, o el centinela de cuenta corriente, o vacío (todavía no se sabe).
+  const [formaCobro, setFormaCobro] = useState(
+    reparto?.a_cuenta_corriente ? CUENTA_CORRIENTE : (reparto?.cuenta_pago ?? ''),
+  )
+  const { data: cuentas } = useCuentasPago(true)
   const [items, setItems] = useState<Row[]>(
     reparto && reparto.items.length > 0 ? reparto.items.map(filaDesdeItem) : [filaVacia()],
   )
@@ -124,7 +133,12 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
       ? reparto!.items.map((i) => ({ producto: i.producto!, cantidad: i.cantidad, es_bolsa: i.es_bolsa }))
       : items
           .filter((i): i is Row & { productoId: string } => i.productoId !== null)
-          .map((i) => ({ producto: i.productoId, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
+          .map((i) => ({
+            producto: i.productoId,
+            // Vacío mientras se corrige es normal en el formulario; en el payload no.
+            cantidad: redondearCantidad(parseDecimal(i.cantidad)),
+            es_bolsa: i.esBolsa,
+          }))
 
     if (itemsInput.length === 0) {
       toast('Agregá al menos un producto al reparto', 'error')
@@ -138,6 +152,8 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
       destino,
       fecha,
       notas,
+      cuenta_pago: formaCobro === CUENTA_CORRIENTE || !formaCobro ? null : formaCobro,
+      a_cuenta_corriente: formaCobro === CUENTA_CORRIENTE,
       costo_envio: costoEnvio || '0',
       descuento: descuento || '0',
       items: itemsInput,
@@ -314,10 +330,31 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
           />
         </section>
 
-        <Input
-          id="notas" label="Notas para el repartidor (opcional)" placeholder="Ej: tocar timbre del fondo"
-          value={notas} onChange={(e) => setNotas(e.target.value)}
-        />
+        <section className="grid grid-cols-2 gap-4">
+          <div>
+            <Select
+              id="forma-cobro" label="Cómo se cobra"
+              value={formaCobro} onChange={(e) => setFormaCobro(e.target.value)}
+            >
+              <option value="">Se define al entregar</option>
+              {cuentas?.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              {/* Sin cliente de la ficha no hay a quién cargarle la deuda: el
+                  backend lo rechaza igual, pero acá se ve antes de guardar. */}
+              <option value={CUENTA_CORRIENTE} disabled={!clienteId}>
+                Cuenta corriente {clienteId ? '' : '(elegí un cliente de la lista)'}
+              </option>
+            </Select>
+            {formaCobro === CUENTA_CORRIENTE && (
+              <p className="mt-1 text-xs text-text-dim">
+                El repartidor no cobra: la deuda va a la cuenta del cliente.
+              </p>
+            )}
+          </div>
+          <Input
+            id="notas" label="Notas para el repartidor (opcional)" placeholder="Ej: tocar timbre del fondo"
+            value={notas} onChange={(e) => setNotas(e.target.value)}
+          />
+        </section>
 
         <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface-2/50 p-4">
           <div className="flex items-center justify-between text-sm text-text-dim">

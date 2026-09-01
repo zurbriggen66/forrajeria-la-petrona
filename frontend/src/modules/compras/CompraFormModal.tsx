@@ -7,7 +7,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Select } from '../../components/ui/Select'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatFechaSola, formatMoney, parseDecimal } from '../../lib/format'
+import { formatFechaSola, formatMoney, parseDecimal, redondearCantidad } from '../../lib/format'
 import { ProductoFormModal } from '../productos/ProductoFormModal'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import { aUnidadDeMedida, contenidoEnvase, presentacionDe } from '../productos/presentacion'
@@ -234,8 +234,10 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
         items: validItems.map((row) => ({
           producto: row.producto.id,
           // Siempre en unidad_medida: el backend suma esto al stock tal cual.
-          cantidad: String(cantidadEnUnidad(row)),
-          costo_unitario: row.costo_unitario,
+          // Redondeado porque sale de multiplicar bolsas × contenido, y en
+          // JavaScript eso deja colas de decimales que el backend rechaza.
+          cantidad: redondearCantidad(cantidadEnUnidad(row)),
+          costo_unitario: row.costo_unitario || '0',
         })),
       })
       // Dos renglones del mismo producto entran en la misma compra y el costo

@@ -5,7 +5,7 @@ import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney, parseDecimal } from '../../lib/format'
 import { crearVenta, useClientePorId } from '../pos/api'
-import { PaymentPanel, type DatosCobro } from '../pos/PaymentPanel'
+import { CUENTA_CORRIENTE, PaymentPanel, type DatosCobro } from '../pos/PaymentPanel'
 import { useCambiarEstadoReparto } from './api'
 import type { Reparto } from './types'
 
@@ -81,6 +81,15 @@ export function RepartoCobrarModal({ reparto, onClose, onCobrado }: {
             Los precios se cobran a los vigentes hoy, no a los del día en que se cargó el pedido.
             {envio > 0 && ' El costo del envío viene puesto como recargo — sacalo si esta vez no se lo cobrás.'}
           </p>
+          {(reparto.a_cuenta_corriente || reparto.cuenta_pago_nombre) && (
+            <p className="text-xs text-text-dim">
+              Se cargó para cobrar{' '}
+              <span className="text-text">
+                {reparto.a_cuenta_corriente ? 'a cuenta corriente' : `con ${reparto.cuenta_pago_nombre}`}
+              </span>
+              , y así viene puesto abajo.
+            </p>
+          )}
 
           <div className="flex flex-col gap-1 rounded-xl border border-border bg-surface-2/40 p-3">
             {itemsValidos.map((item) => (
@@ -118,6 +127,9 @@ export function RepartoCobrarModal({ reparto, onClose, onCobrado }: {
           clienteInicial={clienteVinculado ?? null}
           descuentoInicial={String(parseDecimal(reparto.descuento))}
           recargoInicial={String(envio)}
+          // Lo que se decidió al cargar el pedido. Se puede cambiar acá: en la
+          // puerta el cliente puede pagar de otra forma que la planeada.
+          cuentaPagoInicial={reparto.a_cuenta_corriente ? CUENTA_CORRIENTE : (reparto.cuenta_pago ?? '')}
         />
       </div>
     </Modal>

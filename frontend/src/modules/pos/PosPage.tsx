@@ -8,7 +8,7 @@ import { useCajaActual } from '../caja/api'
 import { crearVenta } from './api'
 import { Cart } from './Cart'
 import { PaymentPanel, type DatosCobro } from './PaymentPanel'
-import { parseDecimal } from '../../lib/format'
+import { parseDecimal, redondearCantidad } from '../../lib/format'
 import { cantidadInputId, claveLinea, subtotalLinea } from './precio'
 import { PosStats } from './PosStats'
 import { ProductSearch } from './ProductSearch'
@@ -94,7 +94,11 @@ export function PosPage() {
     const clave = claveLinea(nueva)
     setCart((prev) => (
       prev.some((i) => claveLinea(i) === clave)
-        ? prev.map((i) => (claveLinea(i) === clave ? { ...i, cantidad: String(parseDecimal(i.cantidad) + paso) } : i))
+        ? prev.map((i) => (
+          claveLinea(i) === clave
+            ? { ...i, cantidad: redondearCantidad(parseDecimal(i.cantidad) + paso) }
+            : i
+        ))
         : [...prev, nueva]
     ))
   }
@@ -140,6 +144,17 @@ export function PosPage() {
 
   async function handleCobrar(datos: DatosCobro) {
     if (cart.length === 0) return
+
+    // Se avisa acá y nombrando el producto. El servidor rechaza igual una
+    // cantidad en cero, pero su mensaje habla de "Fila 1" y de un mínimo de
+    // 0.001: con el carrito lleno, el cajero no sabe cuál pesar de nuevo.
+    const sinCantidad = cart.find((i) => parseDecimal(i.cantidad) <= 0)
+    if (sinCantidad) {
+      const nombre = sinCantidad.tipo === 'pack' ? sinCantidad.pack.nombre : sinCantidad.producto.nombre
+      toast(`Poné cuánto lleva de "${nombre}" antes de cobrar.`, 'error')
+      return
+    }
+
     setCobrando(true)
     try {
       const total = Math.max(subtotal - parseDecimal(datos.descuento) + parseDecimal(datos.recargoMonto), 0)

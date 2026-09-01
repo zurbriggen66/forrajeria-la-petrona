@@ -181,11 +181,16 @@ export function QuickProducts({ productos, onAgregar, packs, onAgregarPack }: Pr
             </div>
           )
         })}
-        {visibles.length === 0 && (
+        {tabActiva === PACKS && packs.length === 0 && (
+          <p className="col-span-full py-6 text-center text-sm text-text-dim">
+            Todavía no armaste ningún pack. Se arman en Productos → Combos y Packs.
+          </p>
+        )}
+        {tabActiva !== PACKS && visibles.length === 0 && (
           <p className="col-span-full py-6 text-center text-sm text-text-dim">Sin productos en esta categoría.</p>
         )}
       </div>
-      {enTab.length > MAX_VISIBLES && (
+      {tabActiva !== PACKS && enTab.length > MAX_VISIBLES && (
         <p className="text-center text-xs text-text-dim">
           Mostrando {MAX_VISIBLES} de {enTab.length} — buscá por nombre o código para ver el resto.
         </p>

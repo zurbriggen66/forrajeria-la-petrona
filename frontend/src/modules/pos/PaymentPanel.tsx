@@ -10,7 +10,7 @@ import { useClientesSearch, useCuentasPago } from './api'
 import { ClienteSelectorModal } from './ClienteSelectorModal'
 import type { Cliente } from './types'
 
-const CUENTA_CORRIENTE = 'cuenta_corriente'
+export const CUENTA_CORRIENTE = 'cuenta_corriente'
 const MIXTO = 'mixto'
 
 /** Una línea del cobro mixto. `cuentaId` vacío = Efectivo (misma convención
@@ -66,14 +66,18 @@ interface Props {
    * puede sacar si esta vez no se lo cobra. */
   descuentoInicial?: string
   recargoInicial?: string
+  /** Con qué se pensaba cobrar. El id de una cuenta, o CUENTA_CORRIENTE. Lo usa
+   * el cobro de un reparto, que ya lo eligió al cargar el pedido — igual se
+   * puede cambiar acá si en la puerta pagaron de otra forma. */
+  cuentaPagoInicial?: string
 }
 
 export function PaymentPanel({
   subtotal, cobrando, disabled, onCobrar,
-  clienteInicial = null, descuentoInicial = '0', recargoInicial = '0',
+  clienteInicial = null, descuentoInicial = '0', recargoInicial = '0', cuentaPagoInicial = '',
 }: Props) {
   const { data: cuentas } = useCuentasPago()
-  const [cuentaPagoId, setCuentaPagoId] = useState('')
+  const [cuentaPagoId, setCuentaPagoId] = useState(cuentaPagoInicial)
   const [descuento, setDescuento] = useState(descuentoInicial)
   const [recargoMonto, setRecargoMonto] = useState(recargoInicial)
   const [efectivoRecibido, setEfectivoRecibido] = useState('')

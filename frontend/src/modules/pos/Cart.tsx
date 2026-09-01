@@ -3,7 +3,7 @@ import { AlertTriangle, Layers, Minus, Package, PauseCircle, Play, Plus, Shoppin
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { InputDecimal } from '../../components/ui/InputDecimal'
 import { Table, type Column } from '../../components/ui/Table'
-import { formatMoney, parseDecimal } from '../../lib/format'
+import { formatMoney, parseDecimal, redondearCantidad } from '../../lib/format'
 import { formatCantidadStock } from '../productos/stock'
 import { cantidadInputId, claveLinea, kgEquivalente, precioUnitario, subtotalLinea } from './precio'
 import type { CartItem, CartItemProducto } from './types'
@@ -52,7 +52,7 @@ function CantidadPorPeso({ item, onCambiarCantidad }: {
   function cambiarMonto(valor: string) {
     setMontoTexto(valor)
     const kg = precio > 0 ? parseDecimal(valor) / precio : 0
-    onCambiarCantidad(clave, kg.toFixed(3))
+    onCambiarCantidad(clave, redondearCantidad(kg))
   }
 
   return (
@@ -225,7 +225,7 @@ export function Cart({
         return (
           <div className="flex items-center gap-1">
             <button
-              onClick={() => onCambiarCantidad(clave, String(Math.max(1, cantidad - 1)))}
+              onClick={() => onCambiarCantidad(clave, redondearCantidad(Math.max(1, cantidad - 1)))}
               className="rounded-lg p-2.5 text-text-dim hover:bg-surface-2 hover:text-text"
               aria-label={`Restar uno de ${nombre}`}
             >
@@ -241,7 +241,7 @@ export function Cart({
               className="w-14 !px-2 !py-2 text-center tabular-nums"
             />
             <button
-              onClick={() => onCambiarCantidad(clave, String(cantidad + 1))}
+              onClick={() => onCambiarCantidad(clave, redondearCantidad(cantidad + 1))}
               className="rounded-lg p-2.5 text-text-dim hover:bg-surface-2 hover:text-text"
               aria-label={`Sumar uno de ${nombre}`}
             >

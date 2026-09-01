@@ -236,3 +236,61 @@ class RepartoYStockTests(APITestCase):
         item = self._repartir().data["items"][0]
         self.assertEqual(Decimal(item["producto_precio_venta"]), Decimal("3000.00"))
         self.assertIsNone(item["producto_precio_bolsa"])
+
+    def test_se_guarda_con_que_se_va_a_cobrar(self):
+        from caja.models import CuentaPago
+        efectivo = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        response = self.client.post("/api/repartos/", {
+            "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450", "fecha": "2026-09-01",
+            "costo_envio": "2500", "descuento": "0", "cuenta_pago": str(efectivo.id),
+            "items": [{"producto": str(self.producto.id), "cantidad": "2", "es_bolsa": False}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["cuenta_pago_nombre"], "Efectivo")
+        self.assertFalse(response.data["a_cuenta_corriente"])
+
+    def test_cuenta_corriente_exige_un_cliente_registrado(self):
+        """Con el nombre suelto no alcanza: la deuda va contra una ficha."""
+        response = self.client.post("/api/repartos/", {
+            "cliente_nombre": "Un señor", "destino": "Belgrano 450", "fecha": "2026-09-01",
+            "costo_envio": "0", "descuento": "0", "a_cuenta_corriente": True,
+            "items": [{"producto": str(self.producto.id), "cantidad": "1", "es_bolsa": False}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cliente", response.data)
+
+    def test_cuenta_corriente_con_cliente_registrado_entra(self):
+        from clientes.models import Cliente
+        cliente = Cliente.objects.create(comercio=self.comercio, nombre="Doña Rosa")
+        response = self.client.post("/api/repartos/", {
+            "cliente": str(cliente.id), "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450",
+            "fecha": "2026-09-01", "costo_envio": "0", "descuento": "0", "a_cuenta_corriente": True,
+            "items": [{"producto": str(self.producto.id), "cantidad": "1", "es_bolsa": False}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertTrue(response.data["a_cuenta_corriente"])
+        self.assertIsNone(response.data["cuenta_pago"])
+
+    def test_no_se_puede_elegir_medio_de_pago_y_cuenta_corriente_a_la_vez(self):
+        from caja.models import CuentaPago
+        from clientes.models import Cliente
+        efectivo = CuentaPago.objects.create(comercio=self.comercio, nombre="Efectivo", tipo="efectivo")
+        cliente = Cliente.objects.create(comercio=self.comercio, nombre="Doña Rosa")
+        response = self.client.post("/api/repartos/", {
+            "cliente": str(cliente.id), "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450",
+            "fecha": "2026-09-01", "costo_envio": "0", "descuento": "0",
+            "a_cuenta_corriente": True, "cuenta_pago": str(efectivo.id),
+            "items": [{"producto": str(self.producto.id), "cantidad": "1", "es_bolsa": False}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_acepta_una_cuenta_de_pago_de_otro_comercio(self):
+        from caja.models import CuentaPago
+        otro = Comercio.objects.create(nombre="Otro (test)")
+        ajena = CuentaPago.objects.create(comercio=otro, nombre="Efectivo ajeno", tipo="efectivo")
+        response = self.client.post("/api/repartos/", {
+            "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450", "fecha": "2026-09-01",
+            "costo_envio": "0", "descuento": "0", "cuenta_pago": str(ajena.id),
+            "items": [{"producto": str(self.producto.id), "cantidad": "1", "es_bolsa": False}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

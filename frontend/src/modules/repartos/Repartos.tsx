@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  Check, DollarSign, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck, X,
+  Check, DollarSign, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck,
+  UserRound, Wallet, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -16,11 +17,69 @@ import { RepartoFormModal } from './RepartoFormModal'
 import { useCambiarEstadoReparto, useDeleteReparto, useRepartos } from './api'
 import { ESTADOS, type EstadoReparto, type Reparto, type RepartoFiltros } from './types'
 
-const ESTILO_ESTADO: Record<EstadoReparto, string> = {
-  pendiente: 'border-warning/40 bg-warning/10 text-warning',
-  en_camino: 'border-accent/40 bg-accent/10 text-accent',
-  entregado: 'border-accent-2/40 bg-accent-2/10 text-accent-2',
-  cancelado: 'border-border bg-surface-2 text-text-dim',
+/** Semáforo del reparto: de un vistazo, en qué anda cada pedido.
+ *
+ * Son CINCO y no cuatro porque "entregado" esconde dos situaciones muy
+ * distintas: uno facturado está cerrado, y uno entregado sin facturar es
+ * mercadería que salió y plata que no entró — el que más hay que mirar y el
+ * único que la pantalla no distinguía.
+ *
+ * Los colores son fijos y no salen de --color-accent, que el comercio elige en
+ * Config: un semáforo que cambia de color con la marca deja de ser un
+ * semáforo. Verde, ámbar y rojo ya significan lo mismo en toda la app. */
+type Semaforo = 'pendiente' | 'en_camino' | 'sin_facturar' | 'facturado' | 'cancelado'
+
+const SEMAFORO: Record<Semaforo, {
+  label: string
+  /** Qué significa, para la referencia de arriba y el title de la tarjeta. */
+  ayuda: string
+  /** La tarjeta entera, no sólo la etiqueta: es lo que se ve a un metro. */
+  tarjeta: string
+  chip: string
+  punto: string
+}> = {
+  pendiente: {
+    label: 'Pendiente',
+    ayuda: 'Cargado, todavía no salió',
+    tarjeta: 'border-warning/40 bg-warning/[0.06]',
+    chip: 'border-warning/40 bg-warning/10 text-warning',
+    punto: 'bg-warning',
+  },
+  en_camino: {
+    label: 'En camino',
+    ayuda: 'Salió a la calle',
+    tarjeta: 'border-info/45 bg-info/[0.07]',
+    chip: 'border-info/40 bg-info/10 text-info',
+    punto: 'bg-info',
+  },
+  sin_facturar: {
+    label: 'Sin facturar',
+    ayuda: 'Entregado, pero no descontó stock ni entró a caja',
+    tarjeta: 'border-danger/50 bg-danger/[0.07]',
+    chip: 'border-danger/50 bg-danger/10 text-danger',
+    punto: 'bg-danger',
+  },
+  facturado: {
+    label: 'Facturado',
+    ayuda: 'Entregado y cobrado: cerrado',
+    tarjeta: 'border-accent-2/40 bg-accent-2/[0.06]',
+    chip: 'border-accent-2/40 bg-accent-2/10 text-accent-2',
+    punto: 'bg-accent-2',
+  },
+  cancelado: {
+    label: 'Cancelado',
+    ayuda: 'No se entrega',
+    tarjeta: 'border-border bg-surface opacity-70',
+    chip: 'border-border bg-surface-2 text-text-dim',
+    punto: 'bg-text-dim',
+  },
+}
+
+/** El estado del modelo más el dato que falta: si ya generó su venta. */
+function semaforoDe(reparto: Reparto): Semaforo {
+  if (reparto.estado === 'cancelado') return 'cancelado'
+  if (reparto.estado === 'entregado') return reparto.venta ? 'facturado' : 'sin_facturar'
+  return reparto.estado === 'en_camino' ? 'en_camino' : 'pendiente'
 }
 
 const LABEL_ESTADO: Record<EstadoReparto, string> = {
@@ -28,6 +87,22 @@ const LABEL_ESTADO: Record<EstadoReparto, string> = {
   en_camino: 'En camino',
   entregado: 'Entregado',
   cancelado: 'Cancelado',
+}
+
+/** Referencia de colores. Va arriba de la lista y no en un tooltip: si hay que
+ * pasar el mouse para saber qué significa el color, el semáforo no sirve. */
+function ReferenciaSemaforo() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs">
+      {(Object.keys(SEMAFORO) as Semaforo[]).map((clave) => (
+        <span key={clave} className="flex items-center gap-1.5 text-text-dim">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${SEMAFORO[clave].punto}`} />
+          <span className="text-text">{SEMAFORO[clave].label}</span>
+          <span>· {SEMAFORO[clave].ayuda}</span>
+        </span>
+      ))}
+    </div>
+  )
 }
 
 /** Próximo paso natural del reparto — el botón que el cliente va a apretar el
@@ -51,21 +126,36 @@ function TarjetaReparto({
   onImprimir: () => void
 }) {
   const siguiente = SIGUIENTE[reparto.estado]
+  const semaforo = SEMAFORO[semaforoDe(reparto)]
 
   return (
-    <div className="tarjeta-viva flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+    <div
+      title={semaforo.ayuda}
+      className={`tarjeta-viva flex flex-col gap-3 rounded-xl border p-4 ${semaforo.tarjeta}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium text-text">{reparto.cliente_nombre}</span>
-            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${ESTILO_ESTADO[reparto.estado]}`}>
-              {LABEL_ESTADO[reparto.estado]}
+            <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${semaforo.chip}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${semaforo.punto}`} />
+              {semaforo.label}
             </span>
           </div>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-text-dim">
             <MapPin size={13} className="shrink-0 text-accent" />
             <span className="truncate">{reparto.destino}</span>
           </p>
+          {/* Con qué se cobra: el repartidor tiene que salir sabiéndolo, y el
+              que arma la hoja de ruta tiene que verlo sin abrir el pedido. */}
+          {(reparto.a_cuenta_corriente || reparto.cuenta_pago_nombre) && (
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-text-dim">
+              {reparto.a_cuenta_corriente ? <UserRound size={12} /> : <Wallet size={12} />}
+              {reparto.a_cuenta_corriente
+                ? <span className="text-warning">A cuenta corriente — no cobrar</span>
+                : <>Cobrar con <span className="text-text">{reparto.cuenta_pago_nombre}</span></>}
+            </p>
+          )}
           {reparto.telefono && (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-text-dim">
               <Phone size={12} /> {reparto.telefono}
@@ -104,13 +194,6 @@ function TarjetaReparto({
 
       {reparto.notas && <p className="text-xs italic text-text-dim">“{reparto.notas}”</p>}
 
-      {/* Un reparto entregado sin venta linkeada es plata entregada que no
-          entró a ningún lado: hay que poder facturarlo desde acá. */}
-      {reparto.estado === 'entregado' && !reparto.venta && (
-        <p className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-warning">
-          Entregado pero sin facturar: no descontó stock ni entró a caja.
-        </p>
-      )}
       {reparto.venta_numero_ticket && (
         <p className="text-xs text-accent-2">Facturado — ticket #{reparto.venta_numero_ticket}</p>
       )}
@@ -269,6 +352,8 @@ export function Repartos() {
           </p>
         </div>
       ) : (
+        <>
+        <ReferenciaSemaforo />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {repartos!.map((r) => (
             <TarjetaReparto
@@ -282,6 +367,7 @@ export function Repartos() {
             />
           ))}
         </div>
+        </>
       )}
 
       <p className="text-xs text-text-dim">

@@ -1,5 +1,6 @@
 from django.db import models
 
+from caja.models import CuentaPago
 from clientes.models import Cliente
 from core.models import BaseModel, Perfil, TenantModel
 from productos.models import Producto
@@ -32,6 +33,15 @@ class Reparto(TenantModel):
     estado = models.CharField(max_length=20, choices=ESTADOS, default="pendiente")
     repartidor = models.ForeignKey(Perfil, on_delete=models.SET_NULL, null=True, blank=True)
     notas = models.CharField(max_length=300, blank=True)
+    # Cómo se va a cobrar. Es la INTENCIÓN con la que sale el pedido: el
+    # repartidor tiene que salir sabiendo si cobra, con qué, o si no cobra nada
+    # porque va a la cuenta del cliente. Lo que de verdad entra a caja lo decide
+    # la venta al facturar, que puede terminar siendo otra cosa.
+    cuenta_pago = models.ForeignKey(CuentaPago, on_delete=models.SET_NULL, null=True, blank=True)
+    # Excluyente con cuenta_pago: la cuenta corriente no es una cuenta de caja,
+    # es deuda del cliente. Por eso exige un cliente registrado, no un nombre
+    # suelto — mismo criterio que la venta fiada.
+    a_cuenta_corriente = models.BooleanField(default=False)
     # Totales: se recalculan siempre en el servidor a partir de los ítems.
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     costo_envio = models.DecimalField(max_digits=14, decimal_places=2, default=0)

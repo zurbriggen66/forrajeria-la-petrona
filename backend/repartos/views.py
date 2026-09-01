@@ -12,6 +12,7 @@ from core.models import Perfil
 from productos.models import Producto
 from productos.precios import resolver_precio_item
 
+from caja.models import CuentaPago
 from ventas.models import Venta
 
 from .models import Reparto, RepartoItem
@@ -105,6 +106,12 @@ class RepartoViewSet(TenantViewSet):
                 p.id: p for p in Producto.objects.filter(comercio=comercio, id__in=producto_ids)
             }
 
+            cuenta_obj = None
+            if data["cuenta_pago"]:
+                cuenta_obj = CuentaPago.objects.filter(comercio=comercio, id=data["cuenta_pago"]).first()
+                if cuenta_obj is None:
+                    raise ValidationError({"cuenta_pago": "No pertenece a este comercio."})
+
             cliente_obj = None
             if data["cliente"]:
                 cliente_obj = Cliente.objects.filter(comercio=comercio, id=data["cliente"]).first()
@@ -143,6 +150,8 @@ class RepartoViewSet(TenantViewSet):
                 "fecha": data["fecha"],
                 "estado": data["estado"],
                 "notas": data["notas"],
+                "cuenta_pago": cuenta_obj,
+                "a_cuenta_corriente": data["a_cuenta_corriente"],
                 "subtotal": subtotal,
                 "costo_envio": data["costo_envio"],
                 "descuento": data["descuento"],

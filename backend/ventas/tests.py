@@ -1236,3 +1236,69 @@ class VentaDePackTests(APITestCase):
         vacio = Combo.objects.create(comercio=self.comercio, nombre="Vacío", precio=Decimal("500.00"))
         response = self._vender([{"combo": str(vacio.id), "cantidad": "1"}])
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class VentaAGranelTests(APITestCase):
+    """Vender fracciones: 350 g de balanceado, medio kilo de semillas.
+
+    Fija el contrato del que depende el frontend: tres decimales. El POS suma
+    0,1 kg por toque y en JavaScript eso genera números de dieciséis decimales,
+    así que redondea antes de mandar (lib/format.ts::redondearCantidad). Si acá
+    se aflojara o se endureciera el límite, ese redondeo quedaría desalineado.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero-granel", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta", monto_apertura=Decimal("0"))
+
+        self.granel = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado granel", precio_venta=Decimal("3000.00"),
+            precio_costo=Decimal("1800.0000"), stock=Decimal("100"),
+            venta_por_peso=True, unidad_medida="kg", bolsa_kg=20, precio_bolsa=Decimal("55000.00"),
+        )
+
+    def _vender(self, cantidad):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()), "metodo_pago": "efectivo",
+            "items": [{"producto": str(self.granel.id), "cantidad": cantidad}],
+        }, format="json")
+
+    def test_medio_kilo_se_cobra_y_descuenta_medio_kilo(self):
+        response = self._vender("0.5")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("1500.00"))
+        item = response.data["items"][0]
+        # peso_kg es lo que se descuenta del stock, y tiene que ser el real.
+        self.assertEqual(Decimal(item["peso_kg"]), Decimal("0.500"))
+        self.granel.refresh_from_db()
+        self.assertEqual(self.granel.stock, Decimal("99.500"))
+
+    def test_trescientos_cincuenta_gramos(self):
+        response = self._vender("0.35")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Decimal(response.data["total"]), Decimal("1050.00"))
+
+    def test_el_minimo_es_un_gramo(self):
+        self.assertEqual(self._vender("0.001").status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self._vender("0").status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_mas_de_tres_decimales_se_rechaza(self):
+        """El límite que obliga al POS a redondear antes de mandar."""
+        response = self._vender("1.2001")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("decimales", str(response.data))
+
+    def test_la_basura_de_punto_flotante_se_rechaza(self):
+        """Lo que rompía la venta cuando el cajero tocaba dos veces un producto
+        a granel: 1.1 + 0.1 = 1.2000000000000002. Acá cae por max_digits antes
+        que por los decimales, pero el punto es que NO entra — por eso el POS
+        redondea antes de mandar."""
+        self.assertEqual(self._vender("1.2000000000000002").status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_la_coma_no_es_un_numero_valido(self):
+        """El front normaliza a punto (InputDecimal); si alguna vez se le
+        escapara una coma, la venta se rechaza entera."""
+        self.assertEqual(self._vender("0,5").status_code, status.HTTP_400_BAD_REQUEST)

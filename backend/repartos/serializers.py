@@ -25,7 +25,22 @@ class RepartoWriteSerializer(serializers.Serializer):
     notas = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
     costo_envio = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"), default=0)
     descuento = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0"), default=0)
+    cuenta_pago = serializers.UUIDField(required=False, allow_null=True, default=None)
+    a_cuenta_corriente = serializers.BooleanField(default=False)
     items = RepartoItemInputSerializer(many=True)
+
+    def validate(self, data):
+        if data.get("a_cuenta_corriente"):
+            if data.get("cuenta_pago"):
+                raise serializers.ValidationError(
+                    "Elegí una cosa o la otra: o se cobra con un medio de pago, o va a la cuenta corriente."
+                )
+            if not data.get("cliente"):
+                raise serializers.ValidationError({
+                    "cliente": "Para mandarlo a cuenta corriente elegí un cliente de la lista, "
+                               "no alcanza con escribir el nombre.",
+                })
+        return data
 
     def validate_items(self, items):
         if not items:
@@ -81,6 +96,7 @@ class RepartoSerializer(serializers.ModelSerializer):
     items = RepartoItemSerializer(many=True, read_only=True)
     cliente_registrado_nombre = serializers.CharField(source="cliente.nombre", read_only=True, default=None)
     repartidor_nombre = serializers.CharField(source="repartidor.nombre_completo", read_only=True, default=None)
+    cuenta_pago_nombre = serializers.CharField(source="cuenta_pago.nombre", read_only=True, default=None)
     venta_numero_ticket = serializers.IntegerField(source="venta.numero_ticket", read_only=True, default=None)
 
     class Meta:
@@ -89,5 +105,6 @@ class RepartoSerializer(serializers.ModelSerializer):
             "id", "cliente", "cliente_registrado_nombre", "cliente_nombre", "telefono",
             "destino", "fecha", "estado", "repartidor", "repartidor_nombre", "notas",
             "subtotal", "costo_envio", "descuento", "total", "items", "created_at",
+            "cuenta_pago", "cuenta_pago_nombre", "a_cuenta_corriente",
             "venta", "venta_numero_ticket",
         ]

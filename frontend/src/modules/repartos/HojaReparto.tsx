@@ -48,8 +48,16 @@ function BloqueReparto({ reparto }: { reparto: Reparto }) {
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <p className="hoja-etiqueta">A cobrar</p>
+            {/* En cuenta corriente el repartidor NO cobra: si el papel dice "A
+                cobrar $21.700" igual que en los demás, cobra de más y el cliente
+                termina pagando dos veces la misma mercadería. */}
+            <p className="hoja-etiqueta">{reparto.a_cuenta_corriente ? 'No cobrar' : 'A cobrar'}</p>
             <p className="hoja-valor-grande">{formatMoney(aCobrar)}</p>
+            {reparto.a_cuenta_corriente ? (
+              <p className="hoja-valor" style={{ marginTop: '1mm' }}>VA A CUENTA CORRIENTE</p>
+            ) : reparto.cuenta_pago_nombre && (
+              <p className="hoja-valor" style={{ marginTop: '1mm' }}>{reparto.cuenta_pago_nombre}</p>
+            )}
             {reparto.repartidor_nombre && (
               <p className="hoja-datos" style={{ marginTop: '2mm' }}>{reparto.repartidor_nombre}</p>
             )}

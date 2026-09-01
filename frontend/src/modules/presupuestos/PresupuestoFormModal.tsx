@@ -7,7 +7,7 @@ import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
-import { formatMoney, parseDecimal } from '../../lib/format'
+import { formatMoney, parseDecimal, redondearCantidad } from '../../lib/format'
 import { useClientesSearch } from '../pos/api'
 import { precioProducto, tieneBolsa } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
@@ -91,7 +91,12 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
 
     const itemsInput = items
       .filter((i): i is Row & { producto: ProductoCotizable } => i.producto !== null)
-      .map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
+      .map((i) => ({
+        producto: i.producto.id,
+        // Vacío mientras se corrige es normal en el formulario; en el payload no.
+        cantidad: redondearCantidad(parseDecimal(i.cantidad)),
+        es_bolsa: i.esBolsa,
+      }))
 
     if (itemsInput.length === 0) {
       toast('Agregá al menos un producto al presupuesto', 'error')

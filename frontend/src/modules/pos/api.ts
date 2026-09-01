@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { api } from '../../lib/api'
+import { parseDecimal, redondearCantidad, redondearMonto } from '../../lib/format'
 import { useDebounce } from '../../lib/useDebounce'
 import type { Paginated, Producto } from '../productos/types'
 import { encolarVenta } from './offlineQueue'
@@ -60,11 +61,45 @@ export type ResultadoVenta =
   | { status: 'ok'; venta: VentaResult }
   | { status: 'queued' }
 
+/** Deja el payload con números que el servidor pueda leer.
+ *
+ * Es el único lugar por donde pasan las tres formas de vender —el mostrador,
+ * cobrar un presupuesto y facturar un reparto—, así que normalizar acá cubre
+ * las tres de una en vez de repetir la misma guarda en cada pantalla.
+ *
+ * Existe porque los campos de plata viajaban tal cual salían del formulario: si
+ * el cajero borraba el 0 del campo Descuento para escribir otro y cobraba sin
+ * completarlo, se mandaba una cadena vacía y el servidor rechazaba la VENTA
+ * ENTERA con "Se requiere un número válido", sin decir cuál era el campo. */
+function normalizarVenta(input: Omit<VentaInput, 'sync_uuid'>): Omit<VentaInput, 'sync_uuid'> {
+  return {
+    ...input,
+    items: input.items.map((item) => ({
+      ...item,
+      cantidad: redondearCantidad(parseDecimal(item.cantidad)),
+      descuento_pct: redondearMonto(item.descuento_pct),
+    })),
+    descuento: redondearMonto(input.descuento),
+    recargo_monto: redondearMonto(input.recargo_monto),
+    ...(input.monto_cuenta_corriente === undefined
+      ? {}
+      : { monto_cuenta_corriente: redondearMonto(input.monto_cuenta_corriente) }),
+    // Vacío significa "no me dieron un billete", que no es lo mismo que cero:
+    // con null el servidor no calcula vuelto.
+    efectivo_recibido: parseDecimal(input.efectivo_recibido ?? '') > 0
+      ? redondearMonto(input.efectivo_recibido)
+      : null,
+    ...(input.pagos === undefined
+      ? {}
+      : { pagos: input.pagos.map((p) => ({ ...p, monto: redondearMonto(p.monto) })) }),
+  }
+}
+
 /** Registra una venta. Si el POST no llega a destino (sin conexión), la
  * encola en IndexedDB para reintentar cuando vuelva la conexión — el POS
  * nunca se queda "trabado" esperando red. */
 export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>, total?: number): Promise<ResultadoVenta> {
-  const payload: VentaInput = { ...input, sync_uuid: crypto.randomUUID() }
+  const payload: VentaInput = { ...normalizarVenta(input), sync_uuid: crypto.randomUUID() }
   try {
     const { data } = await api.post<VentaResult>('/ventas/', payload)
     return { status: 'ok', venta: data }

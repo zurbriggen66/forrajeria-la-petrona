@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Check, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck, X,
+  Check, DollarSign, Loader2, MapPin, Package, Pencil, Phone, Plus, Printer, Search, Trash2, Truck, X,
 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -11,6 +11,7 @@ import { useToast } from '../../context/ToastContext'
 import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatFechaSola, formatMoney } from '../../lib/format'
+import { RepartoCobrarModal } from './RepartoCobrarModal'
 import { RepartoFormModal } from './RepartoFormModal'
 import { useCambiarEstadoReparto, useDeleteReparto, useRepartos } from './api'
 import { ESTADOS, type EstadoReparto, type Reparto, type RepartoFiltros } from './types'
@@ -33,15 +34,19 @@ const LABEL_ESTADO: Record<EstadoReparto, string> = {
  * 90% de las veces, sin tener que abrir un menú de estados. */
 const SIGUIENTE: Partial<Record<EstadoReparto, { estado: EstadoReparto; label: string }>> = {
   pendiente: { estado: 'en_camino', label: 'Marcar en camino' },
-  en_camino: { estado: 'entregado', label: 'Marcar entregado' },
+  // "Entregar y facturar": entregar es cuando la mercadería sale de verdad, así
+  // que es cuando tiene que descontar stock y existir la venta. Antes marcaba
+  // el estado y nada más, y el pedido había que re-tipearlo entero en el POS.
+  en_camino: { estado: 'entregado', label: 'Entregar y facturar' },
 }
 
 function TarjetaReparto({
-  reparto, onEditar, onCambiarEstado, onEliminar, onImprimir,
+  reparto, onEditar, onCambiarEstado, onEliminar, onImprimir, onFacturar,
 }: {
   reparto: Reparto
   onEditar: () => void
   onCambiarEstado: (estado: EstadoReparto) => void
+  onFacturar: () => void
   onEliminar: () => void
   onImprimir: () => void
 }) {
@@ -99,10 +104,26 @@ function TarjetaReparto({
 
       {reparto.notas && <p className="text-xs italic text-text-dim">“{reparto.notas}”</p>}
 
+      {/* Un reparto entregado sin venta linkeada es plata entregada que no
+          entró a ningún lado: hay que poder facturarlo desde acá. */}
+      {reparto.estado === 'entregado' && !reparto.venta && (
+        <p className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-warning">
+          Entregado pero sin facturar: no descontó stock ni entró a caja.
+        </p>
+      )}
+      {reparto.venta_numero_ticket && (
+        <p className="text-xs text-accent-2">Facturado — ticket #{reparto.venta_numero_ticket}</p>
+      )}
+
       <div className="flex items-center gap-2">
         {siguiente && (
           <Button onClick={() => onCambiarEstado(siguiente.estado)} className="!px-3 !py-1.5 text-xs">
             <Check size={13} /> {siguiente.label}
+          </Button>
+        )}
+        {reparto.estado === 'entregado' && !reparto.venta && (
+          <Button onClick={onFacturar} className="!px-3 !py-1.5 text-xs">
+            <DollarSign size={13} /> Facturar
           </Button>
         )}
         {reparto.estado !== 'cancelado' && reparto.estado !== 'entregado' && (
@@ -132,6 +153,7 @@ export function Repartos() {
   const [busqueda, setBusqueda] = useState('')
   const [modal, setModal] = useState<'nuevo' | Reparto | null>(null)
   const [aEliminar, setAEliminar] = useState<Reparto | null>(null)
+  const [aFacturar, setAFacturar] = useState<Reparto | null>(null)
   // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
   // .hoja-impresion, así que tener varias montadas saldría todo junto.
   const [aImprimir, setAImprimir] = useState<Reparto | 'ruta' | null>(null)
@@ -159,6 +181,13 @@ export function Repartos() {
     .reduce((acc, r) => acc + Number(r.costo_envio), 0)
 
   async function handleCambiarEstado(reparto: Reparto, estado: EstadoReparto) {
+    // Entregar abre el cobro derecho: es el momento en que la mercadería sale y
+    // tiene que descontar stock. Si cierran el modal queda entregado sin
+    // facturar, con el aviso en la tarjeta y el botón "Facturar" a mano.
+    if (estado === 'entregado' && !reparto.venta) {
+      setAFacturar(reparto)
+      return
+    }
     try {
       await cambiarEstado.mutateAsync({ id: reparto.id, estado })
       toast(`Reparto de ${reparto.cliente_nombre}: ${LABEL_ESTADO[estado].toLowerCase()}`)
@@ -249,14 +278,16 @@ export function Repartos() {
               onEditar={() => setModal(r)}
               onCambiarEstado={(estado) => handleCambiarEstado(r, estado)}
               onEliminar={() => setAEliminar(r)}
+              onFacturar={() => setAFacturar(r)}
             />
           ))}
         </div>
       )}
 
       <p className="text-xs text-text-dim">
-        Los repartos no descuentan stock ni entran a la caja: son la hoja de ruta. El cobro se registra
-        como venta en el POS cuando corresponda.
+        Un reparto pendiente o en camino es la hoja de ruta: no descuenta stock ni entra a la caja, porque
+        la mercadería todavía no salió. Al <span className="text-text">entregarlo</span> se factura — ahí
+        se crea la venta con sus productos y el envío, descuenta stock y entra a caja.
       </p>
 
       {/* Invisible en pantalla: sólo existe para el papel (ver .hoja-impresion). */}
@@ -264,6 +295,14 @@ export function Repartos() {
         <HojaRutaDelDia repartos={activos} fecha={activos[0]?.fecha ?? new Date().toISOString().slice(0, 10)} />
       )}
       {aImprimir && aImprimir !== 'ruta' && <HojaReparto reparto={aImprimir} />}
+
+      {aFacturar && (
+        <RepartoCobrarModal
+          reparto={aFacturar}
+          onClose={() => setAFacturar(null)}
+          onCobrado={() => setAFacturar(null)}
+        />
+      )}
 
       {aEliminar && (
         <ConfirmDialog

@@ -12,6 +12,8 @@ from core.models import Perfil
 from productos.models import Producto
 from productos.precios import resolver_precio_item
 
+from ventas.models import Venta
+
 from .models import Reparto, RepartoItem
 from .serializers import (
     RepartoEstadoSerializer,
@@ -76,10 +78,24 @@ class RepartoViewSet(TenantViewSet):
         """Cambiar sólo el estado (pendiente → en camino → entregado), que es
         lo que se toca desde la lista sin reabrir todo el formulario."""
         reparto = self.get_object()
+        comercio = resolver_comercio_activo(request)
         serializer = RepartoEstadoSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         reparto.estado = serializer.validated_data["estado"]
-        reparto.save(update_fields=["estado", "updated_at"])
+        campos = ["estado", "updated_at"]
+
+        venta_id = serializer.validated_data["venta"]
+        if venta_id:
+            if reparto.venta_id:
+                raise ValidationError("Este reparto ya está facturado.")
+            venta = Venta.objects.filter(comercio=comercio, id=venta_id).first()
+            if venta is None:
+                raise ValidationError({"venta": "No pertenece a este comercio."})
+            reparto.venta = venta
+            campos.append("venta")
+
+        reparto.save(update_fields=campos)
         return Response(RepartoSerializer(reparto).data)
 
     def _guardar(self, comercio, data, instancia=None, request=None):

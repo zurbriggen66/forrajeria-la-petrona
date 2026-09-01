@@ -1,11 +1,14 @@
+import uuid
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from caja.models import CajaSesion
 from core.models import Comercio, UsuarioComercio
 from productos.models import Producto
+from ventas.models import Venta
 
 from .models import Reparto
 
@@ -105,3 +108,131 @@ class RepartoTests(APITestCase):
         response = self.client.get("/api/repartos/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 0)
+
+
+class RepartoYStockTests(APITestCase):
+    """Cuándo mueve stock un reparto y cómo queda marcada la venta.
+
+    Un reparto pendiente es la hoja de ruta: no toca nada. Al entregarlo se
+    factura, y esa venta es una venta real que descuenta stock y entra a caja.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Forrajería (test)")
+        self.user = User.objects.create_user(username="dueno-rep", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta", monto_apertura=Decimal("0"))
+
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Alfalfa", precio_venta=Decimal("3000.00"),
+            precio_costo=Decimal("1800.0000"), stock=Decimal("50"),
+        )
+
+    def _stock(self):
+        self.producto.refresh_from_db()
+        return self.producto.stock
+
+    def _repartir(self, cantidad="5", costo_envio="2500"):
+        return self.client.post("/api/repartos/", {
+            "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450", "fecha": "2026-09-01",
+            "costo_envio": costo_envio, "descuento": "0",
+            "items": [{"producto": str(self.producto.id), "cantidad": cantidad, "es_bolsa": False}],
+        }, format="json")
+
+    def _facturar(self, reparto_id, venta_id):
+        return self.client.post(f"/api/repartos/{reparto_id}/estado/",
+                                {"estado": "entregado", "venta": venta_id}, format="json")
+
+    def _venta(self, cantidad="5", recargo="2500"):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()), "metodo_pago": "efectivo", "origen": "reparto",
+            "recargo_monto": recargo,
+            "items": [{"producto": str(self.producto.id), "cantidad": cantidad}],
+        }, format="json")
+
+    def test_cargar_un_reparto_no_mueve_stock(self):
+        response = self._repartir()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["estado"], "pendiente")
+        self.assertIsNone(response.data["venta"])
+        self.assertEqual(self._stock(), Decimal("50.000"))
+
+    def test_en_camino_tampoco_mueve_stock(self):
+        reparto_id = self._repartir().data["id"]
+        response = self.client.post(f"/api/repartos/{reparto_id}/estado/",
+                                    {"estado": "en_camino"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._stock(), Decimal("50.000"))
+
+    def test_facturarlo_descuenta_stock_marca_el_origen_y_cobra_el_envio(self):
+        reparto_id = self._repartir().data["id"]
+
+        venta = self._venta()
+        self.assertEqual(venta.status_code, status.HTTP_201_CREATED, venta.data)
+        self.assertEqual(venta.data["origen"], "reparto")
+        # 5 × $3.000 de productos + $2.500 de envío como recargo.
+        self.assertEqual(Decimal(venta.data["total"]), Decimal("17500.00"))
+        self.assertEqual(self._stock(), Decimal("45.000"))
+
+        response = self._facturar(reparto_id, venta.data["id"])
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["estado"], "entregado")
+        self.assertEqual(str(response.data["venta"]), str(venta.data["id"]))
+        self.assertEqual(response.data["venta_numero_ticket"], venta.data["numero_ticket"])
+
+    def test_no_se_puede_facturar_dos_veces(self):
+        """Sin esta guarda, tocar "Facturar" dos veces descontaba el stock dos
+        veces y dejaba dos ventas por el mismo pedido."""
+        reparto_id = self._repartir().data["id"]
+        self._facturar(reparto_id, self._venta().data["id"])
+        segunda = self._facturar(reparto_id, self._venta().data["id"])
+        self.assertEqual(segunda.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_acepta_una_venta_de_otro_comercio(self):
+        reparto_id = self._repartir().data["id"]
+        otro = Comercio.objects.create(nombre="Otro (test)")
+        ajena = Venta.objects.create(comercio=otro, total=Decimal("100"), numero_ticket=1)
+        response = self._facturar(reparto_id, str(ajena.id))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_entregar_sin_venta_deja_el_reparto_sin_facturar(self):
+        """Es el caso de cerrar el modal de cobro: queda entregado, la pantalla
+        lo avisa en ámbar y el botón "Facturar" sigue a mano."""
+        reparto_id = self._repartir().data["id"]
+        response = self.client.post(f"/api/repartos/{reparto_id}/estado/",
+                                    {"estado": "entregado"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["estado"], "entregado")
+        self.assertIsNone(response.data["venta"])
+        self.assertEqual(self._stock(), Decimal("50.000"))
+
+    def test_se_puede_cambiar_los_productos_antes_de_entregar(self):
+        """El backend siempre lo soportaba (update rearma los ítems); era el
+        formulario el que lo bloqueaba en cualquier edición."""
+        creado = self._repartir(cantidad="5").data
+        otro = Producto.objects.create(
+            comercio=self.comercio, nombre="Maíz", precio_venta=Decimal("1000.00"),
+            precio_costo=Decimal("600.0000"), stock=Decimal("80"),
+        )
+        response = self.client.put(f"/api/repartos/{creado['id']}/", {
+            "cliente_nombre": "Doña Rosa", "destino": "Belgrano 450", "fecha": "2026-09-01",
+            "costo_envio": "2500", "descuento": "0", "estado": "pendiente",
+            "items": [
+                {"producto": str(self.producto.id), "cantidad": "2", "es_bolsa": False},
+                {"producto": str(otro.id), "cantidad": "3", "es_bolsa": False},
+            ],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(len(response.data["items"]), 2)
+        # 2 × 3.000 + 3 × 1.000 = 9.000 de productos
+        self.assertEqual(Decimal(response.data["subtotal"]), Decimal("9000.00"))
+        # Editar no toca stock: el reparto sigue sin facturar.
+        self.assertEqual(self._stock(), Decimal("50.000"))
+
+    def test_el_item_trae_los_precios_vigentes_para_el_formulario(self):
+        """El formulario de edición los usa para recalcular la línea; con sólo
+        `precio_unitario` (el congelado de aquel día) no podía."""
+        item = self._repartir().data["items"][0]
+        self.assertEqual(Decimal(item["producto_precio_venta"]), Decimal("3000.00"))
+        self.assertIsNone(item["producto_precio_bolsa"])

@@ -39,8 +39,10 @@ export function useUpdateReparto() {
 export function useCambiarEstadoReparto() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, estado }: { id: string; estado: EstadoReparto }) => {
-      const { data } = await api.post<Reparto>(`/repartos/${id}/estado/`, { estado })
+    // `venta` sólo va al facturar: la venta ya se creó por POST /ventas/ y esto
+    // la linkea al reparto (ver RepartoCobrarModal).
+    mutationFn: async ({ id, estado, venta }: { id: string; estado: EstadoReparto; venta?: string }) => {
+      const { data } = await api.post<Reparto>(`/repartos/${id}/estado/`, { estado, venta })
       return data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['repartos'] }),

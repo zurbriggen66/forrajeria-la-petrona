@@ -125,7 +125,7 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
   const guardando = crear.isPending || actualizar.isPending
 
   return (
-    <Modal title={esEdicion ? 'Editar presupuesto' : 'Nuevo presupuesto'} onClose={onClose} ancho="lg">
+    <Modal title={esEdicion ? 'Editar presupuesto' : 'Nuevo presupuesto'} onClose={onClose} ancho="xl">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <section className="grid grid-cols-2 gap-4">
           <div className="relative">
@@ -174,12 +174,15 @@ export function PresupuestoFormModal({ presupuesto, onClose }: { presupuesto?: P
             </p>
           )}
 
-          <div className="flex flex-col gap-2">
+          {/* Scroll propio, como en el formulario de compra: con muchos
+              renglones el total y el botón de guardar tienen que seguir a la
+              vista sin recorrer toda la página. */}
+          <div className="flex max-h-[46vh] flex-col gap-2 overflow-y-auto pr-1">
               {items.map((row, i) => {
                 const conBolsa = row.producto ? tieneBolsa(row.producto) : false
                 const precio = row.producto ? precioProducto(row.producto, row.esBolsa) : 0
                 return (
-                  <div key={i} className="grid grid-cols-[1fr_150px_90px_110px_28px] items-center gap-2">
+                  <div key={i} className="grid grid-cols-[1fr_190px_130px_150px_40px] items-center gap-3 rounded-lg border border-border/60 bg-surface-2/40 p-2">
                     <ProductoPicker producto={row.producto} onSelect={(p) => updateItem(i, { producto: p, esBolsa: false })} />
 
                     {conBolsa ? (

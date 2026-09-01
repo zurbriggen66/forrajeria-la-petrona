@@ -12,6 +12,10 @@ import { useComercioConfig, useUpdateComercioConfig } from './api'
  * ninguno, y el botón de "volver al original" vuelve acá. */
 const COLOR_DEL_TEMA = '#2f8fff'
 
+/** El fondo del tema (--color-bg en index.css). Se usa para avisar cuando el
+ * color elegido casi no se distingue de él. Si el fondo cambia, cambia acá. */
+const COLOR_DE_FONDO = '#02050f'
+
 /** Presets probados sobre el fondo negro del tema. No es una paleta cerrada
  * —abajo se puede tipear cualquier hex— pero evita que el 90% de los casos
  * tenga que pelear con un selector de color. */
@@ -71,7 +75,7 @@ export function Apariencia() {
   const elegido = valido ? (aHexLargo(color) as string) : COLOR_DEL_TEMA
   // Contra el fondo del tema: un acento muy oscuro se pierde y no sirve para
   // resaltar nada, que es justo para lo que está.
-  const contrasteFondo = contraste(elegido, '#08080a')
+  const contrasteFondo = contraste(elegido, COLOR_DE_FONDO)
 
   async function guardar(hex: string) {
     try {

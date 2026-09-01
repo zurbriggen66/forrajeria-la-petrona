@@ -61,13 +61,21 @@ interface Props {
   /** Precarga el cliente (ej. al cobrar un presupuesto ya vinculado a uno) —
    * se puede seguir cambiando o quitando desde acá como cualquier otro. */
   clienteInicial?: Cliente | null
+  /** Precargan el descuento y el recargo. Los usa el cobro de un reparto: el
+   * costo del envío entra como recargo, así queda a la vista y el cajero lo
+   * puede sacar si esta vez no se lo cobra. */
+  descuentoInicial?: string
+  recargoInicial?: string
 }
 
-export function PaymentPanel({ subtotal, cobrando, disabled, onCobrar, clienteInicial = null }: Props) {
+export function PaymentPanel({
+  subtotal, cobrando, disabled, onCobrar,
+  clienteInicial = null, descuentoInicial = '0', recargoInicial = '0',
+}: Props) {
   const { data: cuentas } = useCuentasPago()
   const [cuentaPagoId, setCuentaPagoId] = useState('')
-  const [descuento, setDescuento] = useState('0')
-  const [recargoMonto, setRecargoMonto] = useState('0')
+  const [descuento, setDescuento] = useState(descuentoInicial)
+  const [recargoMonto, setRecargoMonto] = useState(recargoInicial)
   const [efectivoRecibido, setEfectivoRecibido] = useState('')
   const [vueltoCuentaPagoId, setVueltoCuentaPagoId] = useState('')
   const [pagos, setPagos] = useState<LineaPago[]>([])

@@ -13,6 +13,13 @@ function formatFecha(iso: string) {
   return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+/** Origen de la venta (Venta.origen). El mostrador no se etiqueta: es el caso
+ * normal y ponerle un cartel a todas las filas sería ruido. */
+const ORIGENES: Record<string, { label: string; estilo: string }> = {
+  presupuesto: { label: 'Presupuesto', estilo: 'border-accent/40 text-accent' },
+  reparto: { label: 'Reparto', estilo: 'border-accent-2/40 text-accent-2' },
+}
+
 export function HistorialVentas() {
   const [filtros, setFiltros] = useState<VentasFiltros>({})
   const [estado, setEstado] = useState<'todas' | 'activas' | 'anuladas'>('activas')
@@ -34,7 +41,22 @@ export function HistorialVentas() {
   }
 
   const columns: Column<Venta>[] = [
-    { header: 'Ticket', render: (v) => `#${v.numero_ticket ?? '—'}` },
+    {
+      header: 'Ticket',
+      render: (v) => (
+        <span className="flex items-center gap-1.5">
+          #{v.numero_ticket ?? '—'}
+          {/* De dónde salió la venta. Todas descuentan stock y entran a caja
+              igual, pero una que vino de un presupuesto aprobado se veía
+              idéntica a una del mostrador y no había forma de distinguirlas. */}
+          {ORIGENES[v.origen] && (
+            <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${ORIGENES[v.origen].estilo}`}>
+              {ORIGENES[v.origen].label}
+            </span>
+          )}
+        </span>
+      ),
+    },
     { header: 'Fecha', render: (v) => formatFecha(v.created_at) },
     { header: 'Vendedor', render: (v) => v.vendedor_nombre ?? '—' },
     { header: 'Cliente', render: (v) => v.cliente_nombre ?? 'Consumidor final' },

@@ -8,16 +8,29 @@ import { useToast } from '../../context/ToastContext'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useClientesSearch } from '../pos/api'
-import { precioProducto, tieneBolsa } from '../pos/precio'
+import { precioProducto } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
 import { useCreateReparto, useUpdateReparto } from './api'
 import type { Reparto } from './types'
 
+/** Una fila del reparto.
+ *
+ * Guarda los datos sueltos y no el `Producto` entero porque al EDITAR un
+ * reparto ya cargado no hay Producto completo: el reparto guarda el id, y el
+ * resto (nombre, precios, envase) lo manda el serializer en cada ítem. Con esta
+ * forma, una fila recién elegida y una que ya estaba se tratan igual. */
 interface Row {
-  producto: Producto | null
+  productoId: string | null
+  nombre: string
   cantidad: string
   esBolsa: boolean
+  precioSuelto: number
+  /** null = este producto no se vende por envase cerrado. */
+  precioBolsa: number | null
+  bolsaKg: number | null
+  unidad: string
+  venta_por_peso: boolean
 }
 
 function hoyISO() {
@@ -26,7 +39,45 @@ function hoyISO() {
 }
 
 function filaVacia(): Row {
-  return { producto: null, cantidad: '1', esBolsa: false }
+  return {
+    productoId: null, nombre: '', cantidad: '1', esBolsa: false,
+    precioSuelto: 0, precioBolsa: null, bolsaKg: null, unidad: '', venta_por_peso: false,
+  }
+}
+
+function filaDesdeProducto(producto: Producto): Row {
+  return {
+    productoId: producto.id,
+    nombre: producto.nombre,
+    cantidad: '1',
+    esBolsa: false,
+    precioSuelto: Number(precioProducto(producto, false)),
+    precioBolsa: producto.precio_bolsa === null ? null : Number(producto.precio_bolsa),
+    bolsaKg: producto.bolsa_kg === null ? null : Number(producto.bolsa_kg),
+    unidad: producto.unidad_medida,
+    venta_por_peso: producto.venta_por_peso,
+  }
+}
+
+/** Una fila que ya estaba guardada en el reparto. */
+function filaDesdeItem(item: Reparto['items'][number]): Row {
+  return {
+    productoId: item.producto,
+    nombre: item.producto_nombre ?? '',
+    cantidad: item.cantidad,
+    esBolsa: item.es_bolsa,
+    precioSuelto: Number(item.producto_precio_venta ?? item.precio_unitario),
+    precioBolsa: item.producto_precio_bolsa === null || item.producto_precio_bolsa === undefined
+      ? null
+      : Number(item.producto_precio_bolsa),
+    bolsaKg: item.bolsa_kg === null ? null : Number(item.bolsa_kg),
+    unidad: item.unidad_medida ?? '',
+    venta_por_peso: Boolean(item.bolsa_kg),
+  }
+}
+
+function precioDeFila(row: Row): number {
+  return row.esBolsa && row.precioBolsa !== null ? row.precioBolsa : row.precioSuelto
 }
 
 export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onClose: () => void }) {
@@ -43,7 +94,14 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   const [costoEnvio, setCostoEnvio] = useState(reparto?.costo_envio ?? '0')
   const [descuento, setDescuento] = useState(reparto?.descuento ?? '0')
   const [notas, setNotas] = useState(reparto?.notas ?? '')
-  const [items, setItems] = useState<Row[]>([filaVacia()])
+  const [items, setItems] = useState<Row[]>(
+    reparto && reparto.items.length > 0 ? reparto.items.map(filaDesdeItem) : [filaVacia()],
+  )
+  // Un reparto ya facturado no se toca: cambiarle los productos dejaría la
+  // venta (que ya descontó stock y entró a caja) diciendo otra cosa. Uno
+  // cancelado tampoco. Antes se bloqueaba SIEMPRE que fuera edición, así que un
+  // pedido pendiente había que borrarlo y cargarlo de nuevo para corregirlo.
+  const cerrado = Boolean(reparto && (reparto.venta || reparto.estado === 'entregado' || reparto.estado === 'cancelado'))
 
   const { data: clientesEncontrados } = useClientesSearch(clienteId ? '' : clienteNombre)
 
@@ -51,13 +109,10 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
-  // En edición los productos ya cargados no se re-eligen (el picker necesita el
-  // Producto completo, y el reparto sólo guarda su id): se muestran como están
-  // y se reenvían tal cual. Cambiar QUÉ se manda = cargar el reparto de nuevo.
-  const subtotal = esEdicion
+  const subtotal = cerrado
     ? Number(reparto!.subtotal)
     : items.reduce(
-        (acc, row) => acc + (row.producto ? precioProducto(row.producto, row.esBolsa) * Number(row.cantidad || 0) : 0),
+        (acc, row) => acc + (row.productoId ? precioDeFila(row) * Number(row.cantidad || 0) : 0),
         0,
       )
   const total = Math.max(subtotal - Number(descuento || 0) + Number(costoEnvio || 0), 0)
@@ -65,11 +120,11 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
-    const itemsInput = esEdicion
+    const itemsInput = cerrado
       ? reparto!.items.map((i) => ({ producto: i.producto!, cantidad: i.cantidad, es_bolsa: i.es_bolsa }))
       : items
-          .filter((i): i is Row & { producto: Producto } => i.producto !== null)
-          .map((i) => ({ producto: i.producto.id, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
+          .filter((i): i is Row & { productoId: string } => i.productoId !== null)
+          .map((i) => ({ producto: i.productoId, cantidad: i.cantidad, es_bolsa: i.esBolsa }))
 
     if (itemsInput.length === 0) {
       toast('Agregá al menos un producto al reparto', 'error')
@@ -105,7 +160,7 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   const guardando = crear.isPending || actualizar.isPending
 
   return (
-    <Modal title={esEdicion ? 'Editar reparto' : 'Nuevo reparto'} onClose={onClose} ancho="lg">
+    <Modal title={esEdicion ? 'Editar reparto' : 'Nuevo reparto'} onClose={onClose} ancho="xl">
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <section className="grid grid-cols-2 gap-4">
           <div className="relative">
@@ -158,14 +213,14 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
         <section>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium uppercase tracking-wide text-text-dim">Productos a repartir</span>
-            {!esEdicion && (
+            {!cerrado && (
               <Button type="button" variant="ghost" onClick={() => setItems((p) => [...p, filaVacia()])} className="!px-2 !py-1 text-xs">
                 <Plus size={13} /> Agregar producto
               </Button>
             )}
           </div>
 
-          {esEdicion ? (
+          {cerrado ? (
             <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2/50 p-3">
               {reparto!.items.map((item) => (
                 <div key={item.id} className="flex items-center justify-between text-sm">
@@ -178,18 +233,29 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
                 </div>
               ))}
               <p className="mt-1 border-t border-border pt-2 text-xs text-text-dim">
-                Para cambiar los productos, cargá un reparto nuevo. Acá podés corregir la dirección,
-                el envío, el descuento y los datos del cliente.
+                {reparto?.venta
+                  ? 'Este reparto ya está facturado: los productos no se tocan más, porque la venta ya descontó stock y entró a caja.'
+                  : 'Los productos de un reparto entregado o cancelado no se cambian. Acá podés corregir la dirección, el envío, el descuento y los datos del cliente.'}
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            // Scroll propio, como en el formulario de compra: con muchos
+            // renglones el total y el botón de guardar tienen que seguir a la
+            // vista sin recorrer toda la página.
+            <div className="flex max-h-[42vh] flex-col gap-2 overflow-y-auto pr-1">
               {items.map((row, i) => {
-                const conBolsa = row.producto ? tieneBolsa(row.producto) : false
-                const precio = row.producto ? precioProducto(row.producto, row.esBolsa) : 0
+                const conBolsa = row.precioBolsa !== null && row.bolsaKg !== null
+                const precio = precioDeFila(row)
                 return (
-                  <div key={i} className="grid grid-cols-[1fr_150px_90px_110px_28px] items-center gap-2">
-                    <ProductoPicker producto={row.producto} onSelect={(p) => updateItem(i, { producto: p, esBolsa: false })} />
+                  <div key={i} className="grid grid-cols-[1fr_190px_130px_150px_40px] items-center gap-3 rounded-lg border border-border/60 bg-surface-2/40 p-2">
+                    {/* El picker sólo necesita el nombre para el chip de "ya
+                        elegido", así que sirve igual para una fila guardada. */}
+                    <ProductoPicker
+                      producto={row.productoId ? { nombre: row.nombre } : null}
+                      onSelect={(p) => setItems((prev) => prev.map((fila, idx) => (
+                        idx === i ? (p ? filaDesdeProducto(p) : filaVacia()) : fila
+                      )))}
+                    />
 
                     {conBolsa ? (
                       <div className="flex gap-1">
@@ -212,7 +278,7 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
                       </div>
                     ) : (
                       <span className="text-center text-xs text-text-dim">
-                        {row.producto?.venta_por_peso ? `por ${row.producto.unidad_medida}` : ''}
+                        {row.venta_por_peso ? `por ${row.unidad}` : ''}
                       </span>
                     )}
 

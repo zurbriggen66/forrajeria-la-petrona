@@ -3,14 +3,16 @@ from django.db import models
 from clientes.models import Cliente
 from core.models import BaseModel, Perfil, TenantModel
 from productos.models import Producto
+from ventas.models import Venta
 
 
 class Reparto(TenantModel):
     """Pedido a domicilio: qué se manda, a dónde y cuánto se cobra por llevarlo.
 
-    NO toca stock ni caja: es la hoja de ruta del reparto. Lo que efectivamente
-    se cobra se registra como venta en el POS cuando corresponda — así un
-    pedido cargado a la mañana no descuenta dos veces el mismo stock.
+    Por sí solo NO toca stock ni caja: es la hoja de ruta, y un pedido cargado
+    a la mañana no puede descontar mercadería que todavía no salió. El stock se
+    mueve cuando se entrega y se factura, que es cuando se crea la Venta
+    (ver RepartoViewSet.estado, que la linkea acá).
     """
 
     ESTADOS = [
@@ -35,6 +37,10 @@ class Reparto(TenantModel):
     costo_envio = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     descuento = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # Seteada al facturar el reparto: la venta real que salió de él. Sirve para
+    # ir de uno al otro, para no cobrarlo dos veces, y para que las estadísticas
+    # (que sólo miran Venta) vean esta plata. Mismo criterio que Presupuesto.
+    venta = models.ForeignKey(Venta, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["comercio", "-fecha"])]

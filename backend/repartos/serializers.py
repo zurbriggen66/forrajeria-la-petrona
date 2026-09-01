@@ -45,6 +45,10 @@ class RepartoWriteSerializer(serializers.Serializer):
 
 class RepartoEstadoSerializer(serializers.Serializer):
     estado = serializers.ChoiceField(choices=[e[0] for e in Reparto.ESTADOS])
+    # Sólo lo manda el frontend al facturar (ver RepartoCobrarModal): la Venta
+    # ya se creó por la vía normal (POST /ventas/, con su validación de stock,
+    # caja y cuenta corriente); esto sólo linkea el id.
+    venta = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class RepartoItemSerializer(serializers.ModelSerializer):
@@ -53,12 +57,23 @@ class RepartoItemSerializer(serializers.ModelSerializer):
     bolsa_kg = serializers.DecimalField(
         source="producto.bolsa_kg", max_digits=14, decimal_places=3, read_only=True, default=None
     )
+    # Los dos precios vigentes del producto: sin ellos el formulario de edición
+    # no puede mostrar cuánto sale la línea si se cambia la cantidad o se pasa
+    # de suelto a bolsa. `precio_unitario` es el congelado al cargar el reparto,
+    # que no sirve para eso.
+    producto_precio_venta = serializers.DecimalField(
+        source="producto.precio_venta", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
+    producto_precio_bolsa = serializers.DecimalField(
+        source="producto.precio_bolsa", max_digits=14, decimal_places=2, read_only=True, default=None
+    )
 
     class Meta:
         model = RepartoItem
         fields = [
             "id", "producto", "producto_nombre", "unidad_medida", "bolsa_kg",
             "cantidad", "es_bolsa", "precio_unitario", "subtotal",
+            "producto_precio_venta", "producto_precio_bolsa",
         ]
 
 
@@ -66,6 +81,7 @@ class RepartoSerializer(serializers.ModelSerializer):
     items = RepartoItemSerializer(many=True, read_only=True)
     cliente_registrado_nombre = serializers.CharField(source="cliente.nombre", read_only=True, default=None)
     repartidor_nombre = serializers.CharField(source="repartidor.nombre_completo", read_only=True, default=None)
+    venta_numero_ticket = serializers.IntegerField(source="venta.numero_ticket", read_only=True, default=None)
 
     class Meta:
         model = Reparto
@@ -73,4 +89,5 @@ class RepartoSerializer(serializers.ModelSerializer):
             "id", "cliente", "cliente_registrado_nombre", "cliente_nombre", "telefono",
             "destino", "fecha", "estado", "repartidor", "repartidor_nombre", "notas",
             "subtotal", "costo_envio", "descuento", "total", "items", "created_at",
+            "venta", "venta_numero_ticket",
         ]

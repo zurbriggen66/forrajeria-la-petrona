@@ -152,3 +152,88 @@ class PresupuestoTests(APITestCase):
         response = self.client.get("/api/presupuestos/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 0)
+
+
+class PresupuestoYStockTests(APITestCase):
+    """Cuándo mueve stock un presupuesto y cómo queda marcada la venta.
+
+    Un presupuesto es una cotización: no toca nada hasta que se factura. La
+    venta que sale de ahí es una venta real —descuenta stock, entra a caja— y
+    tiene que poder distinguirse en el historial de una del mostrador.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Forrajería (test)")
+        self.user = User.objects.create_user(username="dueno-presu", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta", monto_apertura=Decimal("0"))
+
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Maíz partido", precio_venta=Decimal("1500.00"),
+            precio_costo=Decimal("900.0000"), stock=Decimal("100"),
+        )
+
+    def _stock(self):
+        self.producto.refresh_from_db()
+        return self.producto.stock
+
+    def _presupuestar(self, cantidad="4"):
+        return self.client.post("/api/presupuestos/", {
+            "cliente_nombre": "Juan Pérez", "descuento": "0",
+            "items": [{"producto": str(self.producto.id), "cantidad": cantidad}],
+        }, format="json")
+
+    def test_presupuestar_no_mueve_stock(self):
+        response = self._presupuestar()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["estado"], "pendiente")
+        self.assertEqual(self._stock(), Decimal("100.000"))
+
+    def test_aprobar_tampoco_mueve_stock_por_si_solo(self):
+        """Aprobar es sólo el estado: la mercadería sale cuando se factura.
+        Por eso el frontend abre el cobro apenas se aprueba — si no, quedaba
+        aprobado para siempre sin venta ni descuento de stock."""
+        presupuesto_id = self._presupuestar().data["id"]
+        response = self.client.post(f"/api/presupuestos/{presupuesto_id}/estado/",
+                                    {"estado": "aprobado"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["estado"], "aprobado")
+        self.assertIsNone(response.data["venta"])
+        self.assertEqual(self._stock(), Decimal("100.000"))
+
+    def test_facturarlo_descuenta_stock_y_marca_el_origen(self):
+        presupuesto_id = self._presupuestar().data["id"]
+
+        venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "metodo_pago": "efectivo",
+            "origen": "presupuesto",
+            "items": [{"producto": str(self.producto.id), "cantidad": "4"}],
+        }, format="json")
+        self.assertEqual(venta.status_code, status.HTTP_201_CREATED, venta.data)
+        # Distinta de una del mostrador: es lo que el historial usa para el badge.
+        self.assertEqual(venta.data["origen"], "presupuesto")
+        self.assertEqual(self._stock(), Decimal("96.000"))
+
+        response = self.client.post(f"/api/presupuestos/{presupuesto_id}/estado/",
+                                    {"estado": "cobrado", "venta": venta.data["id"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["estado"], "cobrado")
+        self.assertEqual(str(response.data["venta"]), str(venta.data["id"]))
+
+    def test_una_venta_del_mostrador_no_lleva_origen_de_presupuesto(self):
+        venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()), "metodo_pago": "efectivo",
+            "items": [{"producto": str(self.producto.id), "cantidad": "1"}],
+        }, format="json")
+        self.assertEqual(venta.data["origen"], "pos")
+
+    def test_anular_la_venta_devuelve_el_stock_del_presupuesto(self):
+        venta = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()), "metodo_pago": "efectivo", "origen": "presupuesto",
+            "items": [{"producto": str(self.producto.id), "cantidad": "4"}],
+        }, format="json")
+        self.assertEqual(self._stock(), Decimal("96.000"))
+        self.client.post(f"/api/ventas/{venta.data['id']}/anular/", {"motivo": "prueba"}, format="json")
+        self.assertEqual(self._stock(), Decimal("100.000"))

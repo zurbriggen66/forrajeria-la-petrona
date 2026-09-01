@@ -109,7 +109,7 @@ function TarjetaPresupuesto({
         {editable && (
           <>
             <Button onClick={() => onCambiarEstado('aprobado')} className="!px-3 !py-1.5 text-xs">
-              <Check size={13} /> Marcar aprobado
+              <Check size={13} /> Aprobar y facturar
             </Button>
             <Button variant="ghost" onClick={() => onCambiarEstado('rechazado')} className="!px-2 !py-1.5 text-xs">
               <X size={13} /> Rechazar
@@ -173,6 +173,11 @@ export function Presupuestos() {
     try {
       await cambiarEstado.mutateAsync({ id: presupuesto.id, estado })
       toast(`Presupuesto de ${presupuesto.cliente_nombre}: ${LABEL_ESTADO[estado].toLowerCase()}`)
+      // Aprobar sin más era un callejón sin salida: el estado cambiaba y no
+      // pasaba nada — la mercadería seguía en el stock y la venta no existía
+      // hasta que alguien se acordaba de apretar "Cobrar". Ahora aprobar abre
+      // el cobro derecho. Si lo cierran, queda en "aprobado" y el botón sigue.
+      if (estado === 'aprobado') setACobrar(presupuesto)
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo cambiar el estado'), 'error')
     }

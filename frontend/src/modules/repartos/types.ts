@@ -22,8 +22,14 @@ export interface RepartoItem {
   bolsa_kg: string | null
   cantidad: string
   es_bolsa: boolean
+  /** El precio congelado al cargar el reparto. */
   precio_unitario: string
   subtotal: string
+  /** Los precios VIGENTES del producto. Los necesita el formulario de edición
+   * para recalcular la línea al cambiar la cantidad o pasar de suelto a bolsa;
+   * `precio_unitario` es el de aquel día y no sirve para eso. */
+  producto_precio_venta: string | null
+  producto_precio_bolsa: string | null
 }
 
 export interface Reparto {
@@ -44,6 +50,10 @@ export interface Reparto {
   total: string
   items: RepartoItem[]
   created_at: string
+  /** Venta que salió de facturar este reparto. null = todavía no se facturó,
+   * así que no descontó stock ni entró a caja. */
+  venta: string | null
+  venta_numero_ticket: number | null
 }
 
 export interface RepartoItemInput {

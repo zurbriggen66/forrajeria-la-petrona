@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AlertTriangle, Ban, Loader2, Pencil, Printer } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
@@ -8,6 +8,7 @@ import { imprimir } from '../../lib/imprimir'
 import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/format'
 import { useAnularVenta } from './api'
+import { mensajeVerificacion } from './verificacionTexto'
 import type { Venta } from './types'
 import { VentaEditarItemsModal } from './VentaEditarItemsModal'
 
@@ -15,12 +16,24 @@ function formatFecha(iso: string) {
   return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: () => void }) {
+/** El detalle de una venta, con anular y corregir adentro.
+ *
+ * `accionInicial` abre directo el formulario que se pidió: desde la ficha del
+ * cliente se entra apretando "anular" o "corregir" en la fila de la venta, y
+ * volver a buscar el botón adentro del modal era un paso de más. */
+export function TicketDetalleModal({ venta, onClose, accionInicial }: {
+  venta: Venta
+  onClose: () => void
+  accionInicial?: 'anular' | 'editar'
+}) {
   const { toast } = useToast()
   const anularVenta = useAnularVenta()
-  const [anulando, setAnulando] = useState(false)
+  const [anulando, setAnulando] = useState(accionInicial === 'anular' && !venta.anulada)
   const [motivo, setMotivo] = useState('')
   const [editandoItems, setEditandoItems] = useState(false)
+  // El de corregir se prende recién cuando se sabe si la venta lo permite
+  // (ver puedeEditarItems abajo): abrirlo sobre una venta que el backend va a
+  // rechazar sería un formulario que no puede terminar en nada.
 
   // Sólo se puede corregir lo que quedó fiado: es a la cuenta corriente
   // adonde le pega la diferencia (ver VentaViewSet.editar_items). Una
@@ -28,11 +41,18 @@ export function TicketDetalleModal({ venta, onClose }: { venta: Venta; onClose: 
   // ítems); una anulada no tiene nada que corregir.
   const puedeEditarItems = !venta.anulada && !venta.facturado && Number(venta.monto_cuenta_corriente) > 0
 
+  useEffect(() => {
+    if (accionInicial === 'editar' && puedeEditarItems) setEditandoItems(true)
+  }, [accionInicial, puedeEditarItems])
+
   async function handleAnular(e: FormEvent) {
     e.preventDefault()
     try {
-      await anularVenta.mutateAsync({ id: venta.id, motivo })
-      toast('Venta anulada')
+      const resultado = await anularVenta.mutateAsync({ id: venta.id, motivo })
+      // Se le dice en el momento qué pasó con la deuda y con el stock: es la
+      // comprobación que antes había que ir a hacer a mano en dos pantallas.
+      const { mensaje, alerta } = mensajeVerificacion(resultado.verificacion)
+      toast(mensaje ? `Venta anulada · ${mensaje}` : 'Venta anulada', alerta ? 'error' : 'success')
       onClose()
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo anular la venta'), 'error')

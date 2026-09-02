@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, History, Loader2, MessageCircle, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
+import { Ban, FileText, History, Loader2, MessageCircle, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { KpiCard } from '../../components/ui/KpiCard'
@@ -165,6 +165,10 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
   const [movimientoModo, setMovimientoModo] = useState<'pago' | 'ajuste' | null>(null)
   const [movimientoEditando, setMovimientoEditando] = useState<ClienteMovimiento | null>(null)
   const [ventaSeleccionada, setVentaSeleccionada] = useState<Venta | null>(null)
+  // Las dos abren el mismo detalle de venta, con el formulario que corresponde
+  // ya desplegado (ver TicketDetalleModal.accionInicial).
+  const [ventaAanular, setVentaAanular] = useState<Venta | null>(null)
+  const [ventaAcorregir, setVentaAcorregir] = useState<Venta | null>(null)
   const [presupuestoSeleccionado, setPresupuestoSeleccionado] = useState<Presupuesto | null>(null)
   const [confirmarBaja, setConfirmarBaja] = useState(false)
   const [movimientoAEliminar, setMovimientoAEliminar] = useState<ClienteMovimiento | null>(null)
@@ -266,7 +270,34 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
     {
       header: '',
       className: 'text-right',
-      render: (v) => <BotonWhatsapp cliente={cliente} venta={v} />,
+      render: (v) => (
+        <div className="flex items-center justify-end gap-1">
+          {/* Corregir y anular desde acá y no sólo entrando al ticket: la fila
+              ya abría el detalle al clickearla, pero había que saberlo. Las dos
+              acciones piden motivo y quedan en el registro de cambios. */}
+          {!v.anulada && Number(v.monto_cuenta_corriente) > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setVentaAcorregir(v) }}
+              aria-label="Corregir los productos de esta venta"
+              title="Corregir los productos de esta venta"
+              className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          {!v.anulada && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setVentaAanular(v) }}
+              aria-label="Anular esta venta"
+              title="Anular esta venta"
+              className="rounded-lg p-1.5 text-text-dim hover:bg-surface-2 hover:text-danger"
+            >
+              <Ban size={14} />
+            </button>
+          )}
+          <BotonWhatsapp cliente={cliente} venta={v} />
+        </div>
+      ),
     },
   ]
 
@@ -388,6 +419,18 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           onClose={() => setMovimientoEditando(null)}
         />
       )}
+      {ventaAanular && (
+        <TicketDetalleModal
+          venta={ventaAanular} accionInicial="anular" onClose={() => setVentaAanular(null)}
+        />
+      )}
+
+      {ventaAcorregir && (
+        <TicketDetalleModal
+          venta={ventaAcorregir} accionInicial="editar" onClose={() => setVentaAcorregir(null)}
+        />
+      )}
+
       {ventaSeleccionada && (
         <TicketDetalleModal venta={ventaSeleccionada} onClose={() => setVentaSeleccionada(null)} />
       )}

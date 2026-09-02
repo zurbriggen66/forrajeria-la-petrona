@@ -12,6 +12,16 @@ function formatFechaHora(iso: string) {
  * trabaja. Lo de antes no se borra — se pide con el botón. */
 const DIAS_ATRAS_COMPLETO = 3650
 
+/** Cómo se llama lo que pasó, en las palabras del mostrador.
+ *
+ * Una venta no se "borra", se anula — y ese es el word que el dueño busca
+ * cuando reconstruye por qué le cambió el saldo a un cliente. */
+function titulo(registro: MovimientoAuditoria) {
+  const eliminado = registro.accion === 'eliminado'
+  if (registro.tipo === 'venta') return eliminado ? 'Venta anulada' : 'Venta corregida'
+  return eliminado ? 'Borrado' : 'Corregido'
+}
+
 function Fila({ registro }: { registro: MovimientoAuditoria }) {
   const eliminado = registro.accion === 'eliminado'
   const Icono = eliminado ? Trash2 : Pencil
@@ -24,10 +34,12 @@ function Fila({ registro }: { registro: MovimientoAuditoria }) {
           eliminado ? 'text-danger' : 'text-text-dim'
         }`}>
           <Icono size={12} />
-          {eliminado ? 'Borrado' : 'Corregido'}
-          <span className="font-normal normal-case tracking-normal text-text-dim">
-            · {registro.tipo}
-          </span>
+          {titulo(registro)}
+          {registro.tipo !== 'venta' && (
+            <span className="font-normal normal-case tracking-normal text-text-dim">
+              · {registro.tipo}
+            </span>
+          )}
         </span>
         <span className="text-xs text-text-dim">
           {formatFechaHora(registro.created_at)}

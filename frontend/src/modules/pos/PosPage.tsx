@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { CloudOff, Loader2, RefreshCcw } from 'lucide-react'
+import { usePrivacidad } from '../../context/PrivacidadContext'
 import { useToast } from '../../context/ToastContext'
 import { AbrirCajaForm } from '../caja/AbrirCajaForm'
 import { useCajaActual } from '../caja/api'
@@ -32,6 +33,7 @@ export function PosPage() {
   const { data: packs } = useCombos(true)
   const { online, pendientes, rechazadas, sincronizando, sincronizar } = useOfflineSync()
   const { toast } = useToast()
+  const { oculto } = usePrivacidad()
   const queryClient = useQueryClient()
   // Sin conexión no podemos confirmar el estado de la caja: no bloqueamos el
   // POS (offline-first) y confiamos en que el backend valide al sincronizar.
@@ -249,7 +251,11 @@ export function PosPage() {
         </div>
       )}
 
-      <PosStats />
+      {/* La franja de "ventas de hoy" se va con el modo privado: es lo único
+          de esta pantalla que son puros números del negocio, y de paso el
+          espacio vertical se lo llevan los productos, que es para lo que está
+          el POS. El total del carrito NO se tapa: es lo que el cliente paga. */}
+      {!oculto && <PosStats />}
 
       {/* En vertical (tablet) el cobro cae abajo del carrito: con el panel de
           320px fijos al costado, el carrito se quedaba con ~300px y su tabla

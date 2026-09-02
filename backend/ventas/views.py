@@ -11,7 +11,9 @@ from rest_framework.response import Response
 from caja.models import CajaMovimiento, CajaSesion, CuentaPago
 from caja.views import resolver_cuenta_efectivo
 from clientes.models import Cliente, ClienteMovimiento
-from clientes.views import aplicar_movimiento_cliente
+from clientes.views import (
+    aplicar_movimiento_cliente, registrar_auditoria_venta, verificar_saldo,
+)
 from core.mixins import TenantViewSet, resolver_comercio_activo
 from core.models import Perfil
 from fiscal.afip import ErrorFiscal
@@ -27,6 +29,27 @@ from .serializers import (
     VentaEditarItemsSerializer,
     VentaSerializer,
 )
+
+
+def detalle_stock(productos, stock_inicial):
+    """Qué le pasó al stock de cada producto en esta operación.
+
+    Se devuelve al frontend para que el dueño lo VEA: anular una venta o
+    corregirle los ítems mueve stock y deuda de una sola pasada, y hasta ahora
+    la única forma de comprobar que el stock volvió era ir a buscar el producto
+    a mano.
+    """
+    detalle = []
+    for producto in productos:
+        delta = producto.stock - stock_inicial[producto.id]
+        if delta != 0:
+            detalle.append({
+                "producto": str(producto.id),
+                "nombre": producto.nombre,
+                "delta": delta,
+                "stock_actual": producto.stock,
+            })
+    return detalle
 
 
 class VentaViewSet(TenantViewSet):
@@ -118,6 +141,10 @@ class VentaViewSet(TenantViewSet):
         serializer = VentaAnularSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        # Cómo estaba antes de tocar nada: es lo que va al rastro del cliente.
+        saldo_anterior = venta.cliente.saldo_actual if venta.cliente_id else Decimal("0")
+        monto_fiado_anterior = venta.monto_cuenta_corriente
+
         with transaction.atomic():
             # Cuánto hay que devolverle a cada producto. Se acumula en un dict
             # y no en una lista de objetos: un producto puede venir suelto Y
@@ -150,6 +177,7 @@ class VentaViewSet(TenantViewSet):
             productos_a_actualizar = list(
                 Producto.objects.select_for_update().filter(comercio=comercio, id__in=a_devolver)
             )
+            stock_inicial = {p.id: p.stock for p in productos_a_actualizar}
             for producto in productos_a_actualizar:
                 producto.stock = producto.stock + a_devolver[producto.id]
             Producto.objects.bulk_update(productos_a_actualizar, ["stock"])
@@ -209,7 +237,25 @@ class VentaViewSet(TenantViewSet):
                 )
                 aplicar_movimiento_cliente(venta.cliente, "ajuste", -venta.monto_cuenta_corriente)
 
-        return Response(VentaSerializer(venta).data)
+            # El rastro va aunque la venta no haya sido fiada: en la ficha del
+            # cliente se quiere ver que ESTA compra suya se anuló y por qué,
+            # que su saldo se haya movido o no.
+            if venta.cliente_id:
+                registrar_auditoria_venta(
+                    venta=venta, accion="eliminado",
+                    motivo=venta.motivo_anulacion,
+                    perfil=Perfil.objects.filter(user=request.user).first(),
+                    saldo_anterior=saldo_anterior,
+                    monto_anterior=monto_fiado_anterior,
+                )
+
+        return Response({
+            **VentaSerializer(venta).data,
+            "verificacion": {
+                "saldo": verificar_saldo(venta.cliente) if venta.cliente_id else None,
+                "stock": detalle_stock(productos_a_actualizar, stock_inicial),
+            },
+        })
 
     @action(detail=True, methods=["post"])
     def editar_items(self, request, pk=None):
@@ -251,6 +297,10 @@ class VentaViewSet(TenantViewSet):
         if any(item.combo_id for item in venta.items.all()):
             raise ValidationError("Esta venta tiene packs y todavía no se puede corregir. Anulala y cargala de nuevo.")
 
+        # Cómo estaba antes de tocar nada: va al rastro del cliente.
+        saldo_anterior = venta.cliente.saldo_actual
+        monto_fiado_anterior = venta.monto_cuenta_corriente
+
         with transaction.atomic():
             cliente = Cliente.objects.select_for_update().get(pk=venta.cliente_id)
 
@@ -262,6 +312,8 @@ class VentaViewSet(TenantViewSet):
                 p.id: p
                 for p in Producto.objects.select_for_update().filter(comercio=comercio, id__in=producto_ids)
             }
+
+            stock_inicial = {p.id: p.stock for p in productos.values()}
 
             # 1. Devolver al stock lo que esta venta había descontado. Mismo
             # criterio que anular(): peso_kg si es venta por peso, si no
@@ -335,8 +387,26 @@ class VentaViewSet(TenantViewSet):
                 )
                 aplicar_movimiento_cliente(cliente, tipo, delta_total, referencia)
 
+            # Mismo rastro que anular y que corregir un pago a mano: esto le
+            # cambió el saldo a un cliente y tiene que quedar por qué.
+            venta.refresh_from_db(fields=["monto_cuenta_corriente"])
+            registrar_auditoria_venta(
+                venta=venta, accion="editado",
+                motivo=data["motivo"],
+                perfil=Perfil.objects.filter(user=request.user).first(),
+                saldo_anterior=saldo_anterior,
+                monto_anterior=monto_fiado_anterior,
+                monto_nuevo=venta.monto_cuenta_corriente,
+            )
+
         venta.refresh_from_db()
-        return Response(VentaSerializer(venta).data)
+        return Response({
+            **VentaSerializer(venta).data,
+            "verificacion": {
+                "saldo": verificar_saldo(venta.cliente),
+                "stock": detalle_stock(productos.values(), stock_inicial),
+            },
+        })
 
     @action(detail=True, methods=["post"])
     def facturar(self, request, pk=None):

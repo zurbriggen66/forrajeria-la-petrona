@@ -41,6 +41,69 @@ def _ajustar_saldo(cliente, delta):
     cliente.refresh_from_db(fields=["saldo_actual"])
 
 
+def verificar_saldo(cliente):
+    """Recalcula el saldo sumando los movimientos y lo compara con el guardado.
+
+    `saldo_actual` se mantiene a golpe de deltas (ver _ajustar_saldo) y no
+    sumando la cuenta entera en cada venta, porque eso no escala. El precio de
+    esa decisión es que un delta perdido —una excepción en el medio, una
+    corrección vieja hecha a mano en la base— desincroniza la cuenta y nadie se
+    entera hasta que el cliente discute el saldo.
+
+    Esto lo dice. Se devuelve en cada anulación y cada corrección de venta:
+    justo cuando se acaba de mover la deuda es cuando hay que poder confirmar
+    que quedó bien.
+
+    Suma en Python y no en SQL para reusar `_signo`: si el signo de un tipo de
+    movimiento cambiara, tiene que cambiar en un solo lugar.
+    """
+    calculado = Decimal("0")
+    for tipo, monto in cliente.movimientos.values_list("tipo", "monto"):
+        calculado += _signo(tipo) * monto
+    cliente.refresh_from_db(fields=["saldo_actual"])
+    return {
+        "saldo": cliente.saldo_actual,
+        "saldo_calculado": calculado,
+        "coincide": calculado == cliente.saldo_actual,
+        "diferencia": cliente.saldo_actual - calculado,
+    }
+
+
+def registrar_auditoria_venta(*, venta, accion, motivo, perfil, saldo_anterior,
+                              monto_anterior, monto_nuevo=None):
+    """Deja en el rastro del cliente que se anuló o se corrigió una venta suya.
+
+    Va al mismo MovimientoAuditoria que las correcciones de pagos y ajustes
+    porque la pregunta que contesta es la misma: por qué le cambió el saldo a
+    este cliente, cuánto era antes y quién lo tocó. Antes una venta anulada le
+    movía la deuda sin dejar nada acá — el rastro sólo miraba los movimientos
+    cargados a mano, así que la mitad de los cambios de saldo era invisible.
+
+    `movimiento_id` guarda el id de la VENTA y `tipo` queda en "venta": no hay
+    un ClienteMovimiento estable al que apuntar (anular no edita el cargo, crea
+    un ajuste nuevo), y lo que se va a querer buscar después es la venta.
+    """
+    cliente = venta.cliente
+    cliente.refresh_from_db(fields=["saldo_actual"])
+    referencia = f"Venta #{venta.numero_ticket}" if venta.numero_ticket else "Venta"
+    return MovimientoAuditoria.objects.create(
+        comercio=venta.comercio,
+        cliente=cliente,
+        cliente_nombre=cliente.nombre,
+        accion=accion,
+        motivo=motivo,
+        movimiento_id=venta.id,
+        tipo="venta",
+        monto_anterior=monto_anterior,
+        monto_nuevo=monto_nuevo,
+        referencia_anterior=referencia,
+        referencia_nueva=referencia if monto_nuevo is not None else "",
+        saldo_anterior=saldo_anterior,
+        saldo_nuevo=cliente.saldo_actual,
+        hecho_por=perfil,
+    )
+
+
 MEDIO_PAGO_LABELS = dict(MEDIOS_PAGO)
 
 

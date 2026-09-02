@@ -41,15 +41,34 @@ export function useVendedores() {
 const CLAVES_AFECTADAS = [
   ['ventas'], ['estadisticas'], ['inicio'],
   ['cliente-movimientos'], ['clientes-listado'], ['clientes'],
+  ['cuenta-corriente-auditoria'],
   ['productos'], ['inventario-resumen'],
   ['caja-actual'], ['caja-movimientos'],
 ]
+
+/** Lo que el backend contesta después de anular o corregir: además de la venta,
+ * cómo quedaron el saldo del cliente y el stock.
+ *
+ * Se muestra en el momento a propósito. Las dos operaciones mueven deuda y
+ * stock de una sola pasada, y la única forma de comprobar que quedó bien era ir
+ * a buscar el producto y la ficha del cliente a mano. */
+export interface VerificacionVenta {
+  saldo: {
+    saldo: string
+    saldo_calculado: string
+    coincide: boolean
+    diferencia: string
+  } | null
+  stock: { producto: string; nombre: string; delta: string; stock_actual: string }[]
+}
+
+export type VentaConVerificacion = Venta & { verificacion: VerificacionVenta }
 
 export function useAnularVenta() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
-      const { data } = await api.post<Venta>(`/ventas/${id}/anular/`, { motivo })
+      const { data } = await api.post<VentaConVerificacion>(`/ventas/${id}/anular/`, { motivo })
       return data
     },
     onSuccess: () => {
@@ -71,8 +90,12 @@ export interface VentaItemEditInput {
 export function useEditarItemsVenta() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, items }: { id: string; items: VentaItemEditInput[] }) => {
-      const { data } = await api.post<Venta>(`/ventas/${id}/editar_items/`, { items })
+    mutationFn: async (
+      { id, items, motivo }: { id: string; items: VentaItemEditInput[]; motivo: string },
+    ) => {
+      const { data } = await api.post<VentaConVerificacion>(
+        `/ventas/${id}/editar_items/`, { items, motivo },
+      )
       return data
     },
     onSuccess: () => {

@@ -122,6 +122,15 @@ export async function crearVenta(input: Omit<VentaInput, 'sync_uuid'>, total?: n
  * encontrar en el mostrador. `catalogoLocal` queda como respaldo inmediato
  * mientras viaja la request, y como único recurso si no hay red.
  */
+/** Cuántos resultados se muestran en el buscador del POS.
+ *
+ * Con 8 no alcanzaba: en una forrajería hay ocho variantes del mismo
+ * balanceado y el que se busca queda afuera de la lista. El servidor ya venía
+ * trayendo 20, así que subirlo no agrega ni una consulta — sólo dejaba de
+ * mostrar los que ya tenía. El dropdown scrollea y las flechas siguen los
+ * resultados (ver ProductSearch). */
+export const MAX_RESULTADOS_BUSCADOR = 20
+
 export function useBuscarProductosPos(query: string, catalogoLocal: Producto[]) {
   const q = query.trim()
   const diferida = useDebounce(q, 200)
@@ -130,7 +139,7 @@ export function useBuscarProductosPos(query: string, catalogoLocal: Producto[]) 
     queryKey: ['pos-buscar-productos', diferida],
     queryFn: async () => {
       const { data } = await api.get<Paginated<Producto>>('/productos/', {
-        params: { search: diferida, activo: true, page_size: 20 },
+        params: { search: diferida, activo: true, page_size: MAX_RESULTADOS_BUSCADOR },
       })
       return data.results
     },
@@ -150,7 +159,7 @@ export function useBuscarProductosPos(query: string, catalogoLocal: Producto[]) 
   // Sin respuesta del servidor todavía (o sin red) se muestra lo que haya en
   // el catálogo local: el mostrador no puede quedarse esperando.
   const usarServidor = data !== undefined && !isError && diferida === q
-  return (usarServidor ? data : locales).slice(0, 8)
+  return (usarServidor ? data : locales).slice(0, MAX_RESULTADOS_BUSCADOR)
 }
 
 /** Lookup exacto por código de barras para el lector.

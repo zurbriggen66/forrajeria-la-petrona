@@ -17,6 +17,7 @@ export function ProductSearch({ productos, onAgregar }: Props) {
   const [highlightIndex, setHighlightIndex] = useState(0)
   const [buscandoCodigo, setBuscandoCodigo] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const resaltadaRef = useRef<HTMLDivElement>(null)
 
   // Busca contra el servidor sobre el catálogo completo; `productos` (la copia
   // local, parcial) queda como respaldo mientras viaja la request y para
@@ -26,6 +27,13 @@ export function ProductSearch({ productos, onAgregar }: Props) {
   useEffect(() => {
     setHighlightIndex(0)
   }, [resultados])
+
+  // Con 20 resultados la lista scrollea, así que bajar con las flechas puede
+  // resaltar una fila que quedó fuera de la vista. Sin esto, el cajero aprieta
+  // Enter sobre un producto que no está viendo.
+  useEffect(() => {
+    resaltadaRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [highlightIndex])
 
   function agregar(producto: Producto, esBolsa: boolean) {
     onAgregar(producto, esBolsa)
@@ -100,12 +108,13 @@ export function ProductSearch({ productos, onAgregar }: Props) {
       )}
 
       {resultados.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+        <div className="absolute z-20 mt-1 max-h-[60vh] w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
           {resultados.map((p, i) => {
             const conBolsa = tieneBolsa(p)
             return (
               <div
                 key={p.id}
+                ref={i === highlightIndex ? resaltadaRef : undefined}
                 // Con bolsa, la fila no agrega nada sola: sueltro y bolsa son
                 // dos botones explícitos, para no sumar la opción equivocada
                 // por un click a un costado del botón de bolsa.

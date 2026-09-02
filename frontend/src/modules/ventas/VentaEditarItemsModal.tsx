@@ -11,6 +11,7 @@ import { ProductoPicker } from '../productos/ProductoPicker'
 import type { Producto } from '../productos/types'
 import { useEditarItemsVenta } from './api'
 import type { Venta, VentaItem } from './types'
+import { mensajeVerificacion } from './verificacionTexto'
 
 // Sólo los campos que hacen falta para el precio y el picker: un ítem ya
 // vendido no trae el Producto completo, así que se reconstruye con lo que
@@ -70,6 +71,7 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
   const [items, setItems] = useState<Row[]>(() =>
     venta.items.length > 0 ? venta.items.map(filaDesdeItem) : [filaVacia()],
   )
+  const [motivo, setMotivo] = useState('')
 
   function updateItem(index: number, patch: Partial<Row>) {
     setItems((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
@@ -91,6 +93,11 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
+    if (!motivo.trim()) {
+      toast('Poné por qué se corrige esta venta', 'error')
+      return
+    }
+
     const itemsInput = items
       .filter((i): i is Row & { producto: ProductoCotizable } => i.producto !== null)
       .map((i) => ({
@@ -106,8 +113,11 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
     }
 
     try {
-      await editar.mutateAsync({ id: venta.id, items: itemsInput })
-      toast('Venta corregida')
+      const resultado = await editar.mutateAsync({
+        id: venta.id, items: itemsInput, motivo: motivo.trim(),
+      })
+      const { mensaje, alerta } = mensajeVerificacion(resultado.verificacion)
+      toast(mensaje ? `Venta corregida · ${mensaje}` : 'Venta corregida', alerta ? 'error' : 'success')
       onClose()
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo corregir la venta'), 'error')
@@ -209,6 +219,25 @@ export function VentaEditarItemsModal({ venta, onClose }: { venta: Venta; onClos
             </span>
           </div>
         </div>
+
+        {/* Obligatorio, igual que al anular: esto le cambia el saldo a un
+            cliente y queda en el registro de cambios de su cuenta. */}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-text-dim">
+            Por qué se corrige
+          </span>
+          <input
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            maxLength={300}
+            required
+            placeholder="Se llevó dos bolsas, no tres"
+            className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-dim focus:border-accent focus:outline-none"
+          />
+          <span className="text-xs text-text-dim">
+            Queda guardado en el registro de cambios de {venta.cliente_nombre}, con tu nombre.
+          </span>
+        </label>
 
         <div className="flex justify-end gap-3">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>

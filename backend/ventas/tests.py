@@ -14,8 +14,8 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 
 from caja.models import CajaMovimiento, CajaSesion, CuentaPago
-from clientes.models import Cliente, ClienteMovimiento
-from core.models import Comercio, UsuarioComercio
+from clientes.models import Cliente, ClienteMovimiento, MovimientoAuditoria
+from core.models import Comercio, Perfil, UsuarioComercio
 from fiscal.afip import ErrorFiscal
 from fiscal.models import ComercioFiscalConfig, FiscalQueue
 from kubobots.models import KubobotsCliente
@@ -462,6 +462,7 @@ class VentaEditarItemsTests(APITestCase):
                 {"producto": str(self.gaseosa.id), "cantidad": "1"},
                 {"producto": str(self.balde.id), "cantidad": "1"},
             ],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(Decimal(response.data["total"]), Decimal("700.00"))
@@ -484,6 +485,7 @@ class VentaEditarItemsTests(APITestCase):
 
         response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
             "items": [{"producto": str(self.gaseosa.id), "cantidad": "1"}],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(Decimal(response.data["total"]), Decimal("200.00"))
@@ -508,6 +510,7 @@ class VentaEditarItemsTests(APITestCase):
                 {"producto": str(self.gaseosa.id), "cantidad": "1"},
                 {"producto": str(self.balde.id), "cantidad": "1"},
             ],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(Decimal(response.data["monto_cuenta_corriente"]), Decimal("580.00"))
@@ -526,6 +529,7 @@ class VentaEditarItemsTests(APITestCase):
         # la cuenta corriente negativa: no tiene sentido, se rechaza.
         response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
             "items": [{"producto": str(self.gaseosa.id), "cantidad": "0.01"}],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.cliente.refresh_from_db()
@@ -538,6 +542,7 @@ class VentaEditarItemsTests(APITestCase):
         ).data
         response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
             "items": [{"producto": str(self.balde.id), "cantidad": "1"}],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -549,6 +554,7 @@ class VentaEditarItemsTests(APITestCase):
 
         response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
             "items": [{"producto": str(self.balde.id), "cantidad": "1"}],
+            "motivo": "corrección hecha desde el test",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -1372,7 +1378,7 @@ class AnularVentaFiadaTests(APITestCase):
         self.assertEqual(self._saldo(), Decimal("5000.00"))
         response = self.client.post(
             f"/api/ventas/{venta.data['id']}/editar_items/",
-            {"items": [{"producto": str(self.producto.id), "cantidad": "2"}]}, format="json",
+            {"items": [{"producto": str(self.producto.id), "cantidad": "2"}], "motivo": "corrección hecha desde el test"}, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(self._saldo(), Decimal("2000.00"))
@@ -1386,3 +1392,191 @@ class AnularVentaFiadaTests(APITestCase):
         segunda = self.client.post(url, {"motivo": "x"}, format="json")
         self.assertEqual(segunda.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(self._saldo(), Decimal("0.00"))
+
+
+class VentaDesdeLaCuentaDelClienteTests(APITestCase):
+    """Anular o corregir una venta desde la ficha del cliente.
+
+    Hasta ahora el rastro de la cuenta corriente (MovimientoAuditoria) sólo
+    miraba los pagos y ajustes cargados a mano. Una venta anulada le movía la
+    deuda al cliente y no dejaba nada: la mitad de los cambios de saldo era
+    invisible justo en la pantalla que se abre cuando el cliente discute cuánto
+    debe. Y corregir los ítems ni siquiera pedía motivo.
+    """
+
+    def setUp(self):
+        self.mock_whatsapp = patch("clientes.views.enviar_whatsapp").start()
+        self.addCleanup(patch.stopall)
+
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="duenio", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        Perfil.objects.create(
+            user=self.user, comercio=self.comercio, nombre_completo="La Dueña", rol="Dueño",
+        )
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+
+        self.bolsa = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado", precio_costo=Decimal("600"),
+            precio_venta=Decimal("1000"), stock=Decimal("50"),
+        )
+        self.cliente = Cliente.objects.create(
+            comercio=self.comercio, nombre="Doña Rosa", limite_credito=Decimal("100000"),
+        )
+
+    def _vender(self, cantidad="3", fiado="3000"):
+        response = self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.bolsa.id), "cantidad": cantidad}],
+            "cliente": str(self.cliente.id),
+            "monto_cuenta_corriente": fiado,
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return response.data
+
+    def _rastro(self):
+        return MovimientoAuditoria.objects.filter(cliente=self.cliente).order_by("created_at")
+
+    # --- el motivo ---
+
+    def test_corregir_sin_motivo_se_rechaza(self):
+        venta = self._vender()
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.bolsa.id), "cantidad": "2"}],
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("motivo", response.data)
+        # Y no cambió nada: ni la deuda ni el stock.
+        self.cliente.refresh_from_db()
+        self.bolsa.refresh_from_db()
+        self.assertEqual(self.cliente.saldo_actual, Decimal("3000.00"))
+        self.assertEqual(self.bolsa.stock, Decimal("47.000"))
+
+    def test_corregir_con_motivo_en_blanco_se_rechaza(self):
+        venta = self._vender()
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.bolsa.id), "cantidad": "2"}],
+            "motivo": "   ",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # --- el rastro ---
+
+    def test_corregir_deja_el_motivo_en_el_rastro_del_cliente(self):
+        venta = self._vender()
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.bolsa.id), "cantidad": "2"}],
+            "motivo": "se llevó dos, no tres",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+        registro = self._rastro().get()
+        self.assertEqual(registro.accion, "editado")
+        self.assertEqual(registro.tipo, "venta")
+        self.assertEqual(registro.motivo, "se llevó dos, no tres")
+        self.assertEqual(registro.movimiento_id, uuid.UUID(venta["id"]))
+        self.assertEqual(registro.hecho_por.nombre_completo, "La Dueña")
+        # El saldo antes y después, que es el número por el que se pregunta.
+        self.assertEqual(registro.saldo_anterior, Decimal("3000.00"))
+        self.assertEqual(registro.saldo_nuevo, Decimal("2000.00"))
+        self.assertEqual(registro.monto_anterior, Decimal("3000.00"))
+        self.assertEqual(registro.monto_nuevo, Decimal("2000.00"))
+
+    def test_anular_deja_el_motivo_en_el_rastro_del_cliente(self):
+        venta = self._vender()
+        response = self.client.post(
+            f"/api/ventas/{venta['id']}/anular/", {"motivo": "se arrepintió"}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+        registro = self._rastro().get()
+        self.assertEqual(registro.accion, "eliminado")
+        self.assertEqual(registro.tipo, "venta")
+        self.assertEqual(registro.motivo, "se arrepintió")
+        self.assertEqual(registro.saldo_anterior, Decimal("3000.00"))
+        self.assertEqual(registro.saldo_nuevo, Decimal("0.00"))
+        self.assertIsNone(registro.monto_nuevo, "una anulación no tiene monto nuevo")
+
+    def test_anular_una_venta_de_contado_tambien_queda_en_el_rastro(self):
+        """No movió la deuda, pero en la ficha del cliente se quiere ver que
+        esta compra suya se anuló y por qué."""
+        venta = self._vender(fiado="0")
+        self.client.post(
+            f"/api/ventas/{venta['id']}/anular/", {"motivo": "producto en mal estado"}, format="json",
+        )
+
+        registro = self._rastro().get()
+        self.assertEqual(registro.motivo, "producto en mal estado")
+        self.assertEqual(registro.saldo_anterior, registro.saldo_nuevo, "la deuda no se movió")
+
+    def test_el_rastro_se_ve_en_el_endpoint_de_auditoria(self):
+        """Es la pantalla "Registro de cambios" de la ficha del cliente: si el
+        registro se escribe pero no se lista, no sirvió de nada."""
+        venta = self._vender()
+        self.client.post(
+            f"/api/ventas/{venta['id']}/anular/", {"motivo": "se arrepintió"}, format="json",
+        )
+
+        response = self.client.get("/api/clientes/auditoria/", {"cliente": str(self.cliente.id)})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("se arrepintió", [r["motivo"] for r in response.data["results"]])
+
+    # --- la verificación del saldo y del stock ---
+
+    def test_anular_devuelve_el_saldo_verificado_y_el_stock(self):
+        venta = self._vender()
+        response = self.client.post(
+            f"/api/ventas/{venta['id']}/anular/", {"motivo": "se arrepintió"}, format="json",
+        )
+        verificacion = response.data["verificacion"]
+
+        # El saldo quedó en cero y coincide con la suma de los movimientos.
+        self.assertEqual(Decimal(verificacion["saldo"]["saldo"]), Decimal("0.00"))
+        self.assertEqual(
+            Decimal(verificacion["saldo"]["saldo_calculado"]),
+            Decimal(verificacion["saldo"]["saldo"]),
+        )
+        self.assertTrue(verificacion["saldo"]["coincide"])
+
+        # Y las tres bolsas volvieron al stock.
+        self.assertEqual(len(verificacion["stock"]), 1)
+        fila = verificacion["stock"][0]
+        self.assertEqual(fila["nombre"], "Balanceado")
+        self.assertEqual(Decimal(fila["delta"]), Decimal("3.000"))
+        self.assertEqual(Decimal(fila["stock_actual"]), Decimal("50.000"))
+
+    def test_corregir_devuelve_el_stock_que_se_movio(self):
+        venta = self._vender()
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.bolsa.id), "cantidad": "1"}],
+            "motivo": "se llevó una sola",
+        }, format="json")
+        verificacion = response.data["verificacion"]
+
+        # Se habían descontado 3 y quedó 1: vuelven 2 al stock.
+        fila = verificacion["stock"][0]
+        self.assertEqual(Decimal(fila["delta"]), Decimal("2.000"))
+        self.assertEqual(Decimal(fila["stock_actual"]), Decimal("49.000"))
+        self.assertEqual(Decimal(verificacion["saldo"]["saldo"]), Decimal("1000.00"))
+        self.assertTrue(verificacion["saldo"]["coincide"])
+
+    def test_la_verificacion_avisa_si_el_saldo_no_cuadra(self):
+        """El saldo se mantiene a golpe de deltas: si alguna vez se perdió uno,
+        la cuenta queda desincronizada y hasta ahora nadie se enteraba."""
+        venta = self._vender()
+        # Se ensucia el saldo a mano, como lo dejaría un delta perdido.
+        Cliente.objects.filter(pk=self.cliente.pk).update(saldo_actual=Decimal("9999.00"))
+
+        response = self.client.post(f"/api/ventas/{venta['id']}/editar_items/", {
+            "items": [{"producto": str(self.bolsa.id), "cantidad": "2"}],
+            "motivo": "se llevó dos",
+        }, format="json")
+        saldo = response.data["verificacion"]["saldo"]
+
+        self.assertFalse(saldo["coincide"])
+        # Guardado: 9999 sucios menos los 1000 que sacó esta corrección = 8999.
+        # Movimientos: cargo 3000 menos ajuste 1000 = 2000. Sobran 6999.
+        self.assertEqual(Decimal(saldo["saldo"]), Decimal("8999.00"))
+        self.assertEqual(Decimal(saldo["saldo_calculado"]), Decimal("2000.00"))
+        self.assertEqual(Decimal(saldo["diferencia"]), Decimal("6999.00"))

@@ -210,8 +210,18 @@ class VentaEditarItemsSerializer(serializers.Serializer):
     sólo aplica a lo que hay en cuenta corriente; ver VentaViewSet.editar_items."""
 
     items = VentaItemInputSerializer(many=True)
+    # Obligatorio, igual que al anular: corregir los ítems le cambia el saldo a
+    # un cliente y queda en el rastro de su cuenta (MovimientoAuditoria). Sin
+    # motivo, el registro dice qué pasó pero no por qué, que es lo único que
+    # sirve cuando el cliente discute la deuda tres semanas después.
+    motivo = serializers.CharField(max_length=300)
 
     def validate_items(self, items):
         if not items:
             raise serializers.ValidationError("La venta necesita al menos un ítem.")
         return items
+
+    def validate_motivo(self, motivo):
+        if not motivo.strip():
+            raise serializers.ValidationError("Poné por qué se corrige esta venta.")
+        return motivo.strip()

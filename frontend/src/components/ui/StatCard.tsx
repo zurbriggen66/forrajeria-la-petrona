@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Privado } from './Privado'
 
 export type StatVariant = 'total' | 'accent' | 'teal' | 'gold' | 'danger'
 
@@ -25,7 +26,9 @@ export function StatCard({ label, value, variant = 'total' }: StatCardProps) {
       className="flex flex-col justify-center gap-1 rounded-2xl border border-border bg-surface p-4 shadow-lg transition-all hover:-translate-y-1 hover:shadow-2xl hover:scale-[1.02]"
     >
       <span className="text-[11px] font-semibold uppercase tracking-wide text-text-dim">{label}</span>
-      <span className={`font-display text-2xl font-bold tabular-nums ${VARIANTS[variant]}`}>{value}</span>
+      <span className={`font-display text-2xl font-bold tabular-nums ${VARIANTS[variant]}`}>
+        <Privado>{value}</Privado>
+      </span>
     </div>
   )
 }

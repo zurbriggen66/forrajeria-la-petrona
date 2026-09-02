@@ -75,7 +75,7 @@ export function PedidoManualFormModal({ onClose }: { onClose: () => void }) {
                   onChange={(e) => updateRow(i, { cantidad: e.target.value })}
                   className="w-24" aria-label="Cantidad"
                 />
-                <button type="button" onClick={() => removeRow(i)} className="mt-2 rounded p-1 text-text-dim hover:bg-danger/10 hover:text-danger">
+                <button type="button" onClick={() => removeRow(i)} className="mt-2 rounded-md p-1 text-text-dim hover:bg-danger/10 hover:text-danger">
                   <Trash2 size={15} />
                 </button>
               </div>

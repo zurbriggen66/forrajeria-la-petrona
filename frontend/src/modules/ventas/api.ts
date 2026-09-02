@@ -30,6 +30,21 @@ export function useVendedores() {
   })
 }
 
+/** Todo lo que cambia cuando se anula o se corrige una venta.
+ *
+ * Anular devuelve el stock, revierte el arqueo de la caja y —si estaba fiada—
+ * le baja la deuda al cliente. El backend hacía las tres cosas bien, pero acá
+ * sólo se refrescaban las ventas y las estadísticas: el dueño anulaba una venta
+ * fiada, iba a la ficha del cliente y seguía viendo la deuda vieja. Desde su
+ * lado eso es "no descontó el monto", y no había forma de distinguirlo de un
+ * bug de verdad hasta recargar la página a mano. */
+const CLAVES_AFECTADAS = [
+  ['ventas'], ['estadisticas'], ['inicio'],
+  ['cliente-movimientos'], ['clientes-listado'], ['clientes'],
+  ['productos'], ['inventario-resumen'],
+  ['caja-actual'], ['caja-movimientos'],
+]
+
 export function useAnularVenta() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -38,8 +53,7 @@ export function useAnularVenta() {
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ventas'] })
-      queryClient.invalidateQueries({ queryKey: ['estadisticas'] })
+      CLAVES_AFECTADAS.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }))
     },
   })
 }
@@ -62,10 +76,9 @@ export function useEditarItemsVenta() {
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ventas'] })
-      queryClient.invalidateQueries({ queryKey: ['estadisticas'] })
-      queryClient.invalidateQueries({ queryKey: ['cliente-movimientos'] })
-      queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+      // Corregir los ítems mueve la deuda del cliente y el stock igual que
+      // anular: se refresca lo mismo.
+      CLAVES_AFECTADAS.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }))
     },
   })
 }

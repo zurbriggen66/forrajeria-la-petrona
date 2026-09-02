@@ -20,10 +20,14 @@ import type { Reparto } from './types'
  * Existía el mismo modal para presupuestos y no para repartos: marcar
  * "entregado" no hacía nada más que cambiar el estado, y el cajero tenía que
  * volver a cargar todo el pedido a mano en el POS. */
-export function RepartoCobrarModal({ reparto, onClose, onCobrado }: {
+export function RepartoCobrarModal({ reparto, onClose, onCobrado, marcarEntregado = true }: {
   reparto: Reparto
   onClose: () => void
   onCobrado: () => void
+  /** false para cobrar un pedido que todavía no salió (el cliente pagó al
+   * encargarlo). El reparto queda con su venta hecha pero sigue pendiente o en
+   * camino: son dos cosas distintas y hasta ahora se confundían en una. */
+  marcarEntregado?: boolean
 }) {
   const { toast } = useToast()
   const { data: clienteVinculado } = useClientePorId(reparto.cliente)
@@ -60,8 +64,16 @@ export function RepartoCobrarModal({ reparto, onClose, onCobrado }: {
         return
       }
 
-      await cambiarEstado.mutateAsync({ id: reparto.id, estado: 'entregado', venta: resultado.venta.id })
-      toast(`Reparto facturado — ticket #${resultado.venta.numero_ticket}`)
+      await cambiarEstado.mutateAsync({
+        id: reparto.id,
+        estado: marcarEntregado ? 'entregado' : reparto.estado,
+        venta: resultado.venta.id,
+      })
+      toast(
+        marcarEntregado
+          ? `Reparto facturado — ticket #${resultado.venta.numero_ticket}`
+          : `Cobrado por adelantado — ticket #${resultado.venta.numero_ticket}. El repartidor no cobra nada.`,
+      )
       onCobrado()
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo facturar el reparto'), 'error')
@@ -71,12 +83,24 @@ export function RepartoCobrarModal({ reparto, onClose, onCobrado }: {
   }
 
   return (
-    <Modal title={`Facturar el reparto de ${reparto.cliente_nombre}`} onClose={onClose} ancho="xl">
+    <Modal
+      title={marcarEntregado
+        ? `Facturar el reparto de ${reparto.cliente_nombre}`
+        : `Cobrar por adelantado — ${reparto.cliente_nombre}`}
+      onClose={onClose}
+      ancho="xl"
+    >
       <div className="flex flex-wrap gap-4">
         <div className="flex min-w-72 flex-1 flex-col gap-2">
           <p className="flex items-center gap-1.5 text-xs text-text-dim">
             <Bike size={13} className="shrink-0" /> {reparto.destino}
           </p>
+          {!marcarEntregado && (
+            <p className="rounded-lg border border-info/40 bg-info/10 px-2.5 py-1.5 text-xs text-info">
+              El pedido se cobra ahora y sale después. Descuenta stock y entra a la caja hoy, y la hoja de
+              reparto va a decir <span className="font-medium">NO COBRAR</span>.
+            </p>
+          )}
           <p className="text-xs text-text-dim">
             Los precios se cobran a los vigentes hoy, no a los del día en que se cargó el pedido.
             {envio > 0 && ' El costo del envío viene puesto como recargo — sacalo si esta vez no se lo cobrás.'}

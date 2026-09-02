@@ -21,7 +21,7 @@ export function CuentasYCajas() {
     {
       header: '',
       render: (c) => (
-        <button onClick={() => setEditando(c)} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-text">
+        <button onClick={() => setEditando(c)} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-text">
           <Pencil size={14} />
         </button>
       ),

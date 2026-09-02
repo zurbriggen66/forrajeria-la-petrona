@@ -42,6 +42,14 @@ export function PosPage() {
   const [cart, setCart] = useState<CartItem[]>(() => leerCarrito())
   const [pausadas, setPausadas] = useState<VentaPausada[]>(() => listarPausadas())
   const [verPausadas, setVerPausadas] = useState(false)
+  // Sube de uno con cada venta cerrada y va como `key` del panel de cobro, para
+  // que React lo desmonte y lo vuelva a montar limpio.
+  //
+  // El panel guarda NUEVE cosas por su cuenta (cliente, medio de pago,
+  // descuento, recargo, efectivo recibido, cuenta del vuelto, las líneas del
+  // pago mixto…) y acá sólo se vaciaba el carrito. El cliente siguiente
+  // heredaba todo eso: el descuento del anterior, y peor, su cuenta corriente.
+  const [ventasCerradas, setVentasCerradas] = useState(0)
   const [cobrando, setCobrando] = useState(false)
   const [ticket, setTicket] = useState<TicketData | null>(null)
   // Producto a granel recién agregado: en cuanto el carrito lo renderiza, le
@@ -184,9 +192,12 @@ export function PosPage() {
 
       if (resultado.status === 'ok') {
         setTicket({ kind: 'ok', venta: resultado.venta })
+        setVentasCerradas((n) => n + 1)
         queryClient.invalidateQueries({ queryKey: ['estadisticas', 'resumen'] })
       } else {
         setTicket({ kind: 'queued', items: cart, total: subtotal - parseDecimal(datos.descuento) + parseDecimal(datos.recargoMonto) })
+        // También en la venta encolada: se cobró igual, el mostrador sigue.
+        setVentasCerradas((n) => n + 1)
       }
       setCart([])
     } catch (err) {
@@ -265,6 +276,7 @@ export function PosPage() {
         </div>
 
         <PaymentPanel
+          key={ventasCerradas}
           subtotal={subtotal}
           cobrando={cobrando}
           disabled={cart.length === 0}

@@ -27,7 +27,7 @@ import { ESTADOS, type EstadoReparto, type Reparto, type RepartoFiltros } from '
  * Los colores son fijos y no salen de --color-accent, que el comercio elige en
  * Config: un semáforo que cambia de color con la marca deja de ser un
  * semáforo. Verde, ámbar y rojo ya significan lo mismo en toda la app. */
-type Semaforo = 'pendiente' | 'en_camino' | 'sin_facturar' | 'facturado' | 'cancelado'
+type Semaforo = 'pendiente' | 'en_camino' | 'pagado_sin_entregar' | 'sin_facturar' | 'facturado' | 'cancelado'
 
 const SEMAFORO: Record<Semaforo, {
   label: string
@@ -51,6 +51,13 @@ const SEMAFORO: Record<Semaforo, {
     tarjeta: 'border-info/45 bg-info/[0.07]',
     chip: 'border-info/40 bg-info/10 text-info',
     punto: 'bg-info',
+  },
+  pagado_sin_entregar: {
+    label: 'Pagado, falta entregar',
+    ayuda: 'Ya se cobró: el repartidor NO cobra nada',
+    tarjeta: 'border-listo/45 bg-listo/[0.07]',
+    chip: 'border-listo/45 bg-listo/10 text-listo',
+    punto: 'bg-listo',
   },
   sin_facturar: {
     label: 'Sin facturar',
@@ -79,6 +86,10 @@ const SEMAFORO: Record<Semaforo, {
 function semaforoDe(reparto: Reparto): Semaforo {
   if (reparto.estado === 'cancelado') return 'cancelado'
   if (reparto.estado === 'entregado') return reparto.venta ? 'facturado' : 'sin_facturar'
+  // Estado de entrega y cobro son dos ejes distintos: un pedido puede estar
+  // pago y todavía no haber salido. Confundirlo con "pendiente" es lo que hace
+  // que el repartidor lo cobre dos veces.
+  if (reparto.venta) return 'pagado_sin_entregar'
   return reparto.estado === 'en_camino' ? 'en_camino' : 'pendiente'
 }
 
@@ -116,17 +127,22 @@ const SIGUIENTE: Partial<Record<EstadoReparto, { estado: EstadoReparto; label: s
 }
 
 function TarjetaReparto({
-  reparto, onEditar, onCambiarEstado, onEliminar, onImprimir, onFacturar,
+  reparto, onEditar, onCambiarEstado, onEliminar, onImprimir, onFacturar, onCobrarAhora,
 }: {
   reparto: Reparto
   onEditar: () => void
   onCambiarEstado: (estado: EstadoReparto) => void
   onFacturar: () => void
+  onCobrarAhora: () => void
   onEliminar: () => void
   onImprimir: () => void
 }) {
-  const siguiente = SIGUIENTE[reparto.estado]
   const semaforo = SEMAFORO[semaforoDe(reparto)]
+  const paso = SIGUIENTE[reparto.estado]
+  // Ya cobrado: entregar es sólo entregar, no hay nada que facturar.
+  const siguiente = paso && reparto.venta && paso.estado === 'entregado'
+    ? { ...paso, label: 'Marcar entregado' }
+    : paso
 
   return (
     <div
@@ -209,19 +225,25 @@ function TarjetaReparto({
             <DollarSign size={13} /> Facturar
           </Button>
         )}
+        {/* Pagó al encargarlo: se cobra ahora y sale después. */}
+        {!reparto.venta && (reparto.estado === 'pendiente' || reparto.estado === 'en_camino') && (
+          <Button variant="secondary" onClick={onCobrarAhora} className="!px-3 !py-1.5 text-xs">
+            <DollarSign size={13} /> Ya pagó
+          </Button>
+        )}
         {reparto.estado !== 'cancelado' && reparto.estado !== 'entregado' && (
           <Button variant="ghost" onClick={() => onCambiarEstado('cancelado')} className="!px-2 !py-1.5 text-xs">
             <X size={13} /> Cancelar
           </Button>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={onImprimir} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir hoja de ${reparto.cliente_nombre}`}>
+          <button onClick={onImprimir} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir hoja de ${reparto.cliente_nombre}`}>
             <Printer size={14} />
           </button>
-          <button onClick={onEditar} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar reparto de ${reparto.cliente_nombre}`}>
+          <button onClick={onEditar} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar reparto de ${reparto.cliente_nombre}`}>
             <Pencil size={14} />
           </button>
-          <button onClick={onEliminar} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar reparto de ${reparto.cliente_nombre}`}>
+          <button onClick={onEliminar} className="rounded-md p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar reparto de ${reparto.cliente_nombre}`}>
             <Trash2 size={14} />
           </button>
         </div>
@@ -237,6 +259,8 @@ export function Repartos() {
   const [modal, setModal] = useState<'nuevo' | Reparto | null>(null)
   const [aEliminar, setAEliminar] = useState<Reparto | null>(null)
   const [aFacturar, setAFacturar] = useState<Reparto | null>(null)
+  // Distinto de aFacturar: acá el pedido se cobra pero NO se marca entregado.
+  const [aCobrarAhora, setACobrarAhora] = useState<Reparto | null>(null)
   // Una sola hoja montada por vez: window.print() imprime TODO lo que esté en
   // .hoja-impresion, así que tener varias montadas saldría todo junto.
   const [aImprimir, setAImprimir] = useState<Reparto | 'ruta' | null>(null)
@@ -364,6 +388,7 @@ export function Repartos() {
               onCambiarEstado={(estado) => handleCambiarEstado(r, estado)}
               onEliminar={() => setAEliminar(r)}
               onFacturar={() => setAFacturar(r)}
+              onCobrarAhora={() => setACobrarAhora(r)}
             />
           ))}
         </div>
@@ -381,6 +406,15 @@ export function Repartos() {
         <HojaRutaDelDia repartos={activos} fecha={activos[0]?.fecha ?? new Date().toISOString().slice(0, 10)} />
       )}
       {aImprimir && aImprimir !== 'ruta' && <HojaReparto reparto={aImprimir} />}
+
+      {aCobrarAhora && (
+        <RepartoCobrarModal
+          reparto={aCobrarAhora}
+          marcarEntregado={false}
+          onClose={() => setACobrarAhora(null)}
+          onCobrado={() => setACobrarAhora(null)}
+        />
+      )}
 
       {aFacturar && (
         <RepartoCobrarModal

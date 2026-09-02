@@ -1,13 +1,15 @@
 import { useLocation } from 'react-router-dom'
-import { RefreshCw } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { FLAT_ROUTES, NAV_ITEMS } from '../router/navigation'
 import { Button } from '../components/ui/Button'
+import { usePrivacidad } from '../context/PrivacidadContext'
 import { useToast } from '../context/ToastContext'
 import { SucursalSwitcher } from './SucursalSwitcher'
 
 export function Topbar() {
   const location = useLocation()
   const { toast } = useToast()
+  const { oculto, alternar } = usePrivacidad()
 
   const current =
     FLAT_ROUTES.find((r) => r.path === location.pathname) ??
@@ -23,6 +25,16 @@ export function Topbar() {
       </h1>
       <div className="flex items-center gap-3">
         <SucursalSwitcher />
+        {/* Para cuando hay un cliente del otro lado del mostrador: tapa la
+            plata de todas las tarjetas sin sacar la pantalla del medio. */}
+        <Button
+          variant="secondary"
+          onClick={alternar}
+          title={oculto ? 'Volver a mostrar los números' : 'Tapar los números que están a la vista'}
+        >
+          {oculto ? <EyeOff size={14} /> : <Eye size={14} />}
+          {oculto ? 'Oculto' : 'Ocultar'}
+        </Button>
         <Button variant="secondary" onClick={() => toast('Actualizado')}>
           <RefreshCw size={14} />
           Actualizar

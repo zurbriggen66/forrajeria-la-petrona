@@ -16,7 +16,11 @@ class RepartoWriteSerializer(serializers.Serializer):
     en el servidor contra el Producto — nunca se confía en lo que manda el
     cliente (misma regla que el POS)."""
 
-    cliente = serializers.UUIDField(required=False, allow_null=True, default=None)
+    # Obligatorio: un reparto tiene que quedar en la ficha de alguien. Con el
+    # nombre suelto no se puede fiar, ni ver el historial del cliente, ni
+    # avisarle por WhatsApp — y el que lo carga no vuelve a completarlo después.
+    # El campo del modelo sigue aceptando null por los repartos ya cargados.
+    cliente = serializers.UUIDField()
     cliente_nombre = serializers.CharField(max_length=200)
     telefono = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
     destino = serializers.CharField(max_length=300)
@@ -35,11 +39,6 @@ class RepartoWriteSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     "Elegí una cosa o la otra: o se cobra con un medio de pago, o va a la cuenta corriente."
                 )
-            if not data.get("cliente"):
-                raise serializers.ValidationError({
-                    "cliente": "Para mandarlo a cuenta corriente elegí un cliente de la lista, "
-                               "no alcanza con escribir el nombre.",
-                })
         return data
 
     def validate_items(self, items):

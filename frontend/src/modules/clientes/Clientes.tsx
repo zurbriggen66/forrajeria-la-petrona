@@ -9,11 +9,13 @@ import { formatMoney } from '../../lib/format'
 import { useDebounce } from '../../lib/useDebounce'
 import { CLIENTES_POR_PAGINA, useClientes } from './api'
 import { ClienteDetalleModal } from './ClienteDetalleModal'
+import { EstadisticasClientes } from './EstadisticasClientes'
 import { ClienteFormModal } from './ClienteFormModal'
 import type { Cliente } from './types'
 
 export function Clientes() {
   const [search, setSearch] = useState('')
+  const [verStats, setVerStats] = useState(true)
   const [activo, setActivo] = useState<'todos' | 'activos' | 'inactivos'>('activos')
   const [deuda, setDeuda] = useState<'todos' | 'deben' | 'al_dia'>('todos')
   const [ordering, setOrdering] = useState('nombre')
@@ -60,6 +62,20 @@ export function Clientes() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Las estadísticas van ARRIBA del listado y no en otra pantalla: son la
+          respuesta a "¿cómo viene la cartera?", que es con lo que uno entra a
+          Clientes. El listado sirve para buscar a alguien puntual. */}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-sm font-semibold text-text">Cómo viene la cartera</h2>
+        <button
+          type="button" onClick={() => setVerStats((v) => !v)}
+          className="text-xs text-text-dim hover:text-accent"
+        >
+          {verStats ? 'Ocultar' : 'Ver estadísticas'}
+        </button>
+      </div>
+      {verStats && <EstadisticasClientes />}
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <Input

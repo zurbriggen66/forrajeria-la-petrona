@@ -292,7 +292,7 @@ export function Cart({
       header: '',
       className: 'text-right',
       render: (item) => (
-        <button onClick={() => onQuitar(claveLinea(item))} className="rounded p-1 text-danger/70 hover:bg-danger/10 hover:text-danger">
+        <button onClick={() => onQuitar(claveLinea(item))} className="rounded-md p-1 text-danger/70 hover:bg-danger/10 hover:text-danger">
           <X size={16} />
         </button>
       ),

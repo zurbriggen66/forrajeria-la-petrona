@@ -32,6 +32,10 @@
      --color-accent a propósito: ése lo elige el comercio en Config, y un
      semáforo que cambia de color con la marca deja de ser un semáforo. */
   --color-info: #4d94ff;
+  /* Violeta fijo para "ya está pago pero todavía no salió". Es un estado que no
+     es ni pendiente ni cerrado, y confundirlo con cualquiera de los dos hace
+     que el repartidor cobre algo que ya se cobró. */
+  --color-listo: #a855f7;
   --color-danger: #ff4444;
   --color-text: #eef1f7;
   --color-text-dim: #8792a8;
@@ -40,9 +44,17 @@
   --font-sans: 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
-  --radius-2xl: 0.75rem;
+  /* Radios GRANDES a propósito. La v2 los bajaba por debajo del default de
+     Tailwind para que las formas leyeran "panel técnico", y todo quedaba
+     cuadrado: botones, tarjetas, campos y chips con esquinas casi rectas.
+     Acá se suben por encima del default — todo lo que tiene información
+     (tarjetas, botones, campos, chips) queda redondeado, y alcanza con estos
+     cinco valores porque toda la app usa las clases rounded-*. */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
 }
 
 html {

@@ -516,3 +516,75 @@ class ContabilidadTests(APITestCase):
         Cliente.objects.create(comercio=otro, nombre="Ajeno", saldo_actual=Decimal("9999"))
         r = self.client.get("/api/estadisticas/contabilidad/deudas/")
         self.assertEqual(Decimal(r.data["por_cobrar"]["total"]), Decimal("0"))
+
+
+class MargenTests(APITestCase):
+    """El margen se mide contra lo cobrado, no contra la lista de precios.
+
+    Era el bug: `margen_pct` salía de sumar los subtotales de los items, que no
+    saben del descuento ni del recargo de la venta. Un comercio que descontaba
+    20% veía el mismo margen que si hubiera vendido a precio de lista, y el
+    número mentía justo para arriba — el peor sentido para decidir precios.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="duenio", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta")
+        # Vende a 1000 lo que cuesta 600: margen de lista 40%.
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado",
+            precio_costo=Decimal("600"), precio_venta=Decimal("1000"), stock=Decimal("1000"),
+        )
+
+    def _vender(self, **extra):
+        payload = {
+            "sync_uuid": str(uuid.uuid4()),
+            "items": [{"producto": str(self.producto.id), "cantidad": "10"}],
+        }
+        payload.update(extra)
+        response = self.client.post("/api/ventas/", payload, format="json")
+        assert response.status_code == 201, response.data
+
+    def _margenes(self):
+        """El mismo período en las tres pantallas que lo informan."""
+        resumen = self.client.get("/api/estadisticas/resumen/")
+        panel = self.client.get("/api/estadisticas/panel/")
+        contab = self.client.get("/api/estadisticas/contabilidad/resultado/")
+        self.assertEqual(resumen.status_code, 200, resumen.data)
+        self.assertEqual(panel.status_code, 200, panel.data)
+        self.assertEqual(contab.status_code, 200, contab.data)
+        return (
+            resumen.data["margen_pct"],
+            panel.data["kpis"]["margen_pct"],
+            contab.data["resultado"]["margen_bruto_pct"],
+        )
+
+    def test_venta_sin_descuento_da_el_margen_de_lista(self):
+        self._vender()
+        for margen in self._margenes():
+            self.assertAlmostEqual(margen, 40.0, places=2)
+
+    def test_el_descuento_de_la_venta_baja_el_margen(self):
+        # Vendió 10.000 de lista y cobró 8.000. Costo 6.000 → margen real 25%.
+        self._vender(descuento="2000")
+        for margen in self._margenes():
+            self.assertAlmostEqual(margen, 25.0, places=2)
+
+    def test_el_recargo_de_la_venta_sube_el_margen(self):
+        # 10.000 más 3.000 de envío = 13.000 cobrados, costo 6.000 → 53,85%.
+        self._vender(recargo_monto="3000")
+        for margen in self._margenes():
+            self.assertAlmostEqual(margen, 53.85, places=1)
+
+    def test_las_tres_pantallas_informan_el_mismo_margen(self):
+        self._vender()
+        self._vender(descuento="2000")
+        self._vender(recargo_monto="3000")
+        # Cobrado 10.000 + 8.000 + 13.000 = 31.000; costo 18.000 → 41,94%.
+        margenes = self._margenes()
+        for margen in margenes:
+            self.assertAlmostEqual(margen, 41.94, places=1)
+        self.assertEqual(len(set(round(m, 6) for m in margenes)), 1, margenes)

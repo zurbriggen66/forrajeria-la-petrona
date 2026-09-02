@@ -218,7 +218,7 @@ export function ComboFormModal({ combo, onClose }: { combo?: Combo; onClose: () 
                   <button
                     type="button" onClick={() => setItems((p) => (p.length === 1 ? p : p.filter((_, j) => j !== i)))}
                     disabled={items.length === 1}
-                    className="rounded p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                    className="rounded-md p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
                     aria-label="Quitar del pack"
                   >
                     <Trash2 size={15} />

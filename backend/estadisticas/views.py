@@ -60,6 +60,16 @@ def _margen_pct(ingresos, costo):
     return float((ingresos - costo) / ingresos * 100)
 
 
+def cmv(ventas):
+    """Costo de la mercadería vendida: lo que costó comprar lo que se vendió.
+
+    Sale de `VentaItem.costo_unitario`, que es el costo congelado al momento de
+    la venta — no el precio de costo actual del producto, que pudo cambiar.
+    Incluye los packs: su costo es la suma de lo que costaron sus componentes."""
+    agg = items_con_costo(VentaItem.objects.filter(venta__in=ventas)).aggregate(t=Sum("item_costo"))
+    return agg["t"] or Decimal("0")
+
+
 def _variacion_pct(actual, anterior):
     """Variación porcentual contra un período previo. None cuando el anterior
     es cero: no existe "X% más que nada", y devolver 0 o infinito mentiría."""
@@ -154,9 +164,11 @@ class ResumenView(APIView):
         ingresos = agregados["ingresos"] or Decimal("0")
         cantidad = agregados["cantidad"] or 0
 
-        items = items_con_costo(VentaItem.objects.filter(venta__in=ventas))
-        item_agg = items.aggregate(subtotal=Sum("subtotal"), costo=Sum("item_costo"))
-        margen_pct = _margen_pct(item_agg["subtotal"] or Decimal("0"), item_agg["costo"] or Decimal("0"))
+        # El margen va contra lo que se cobró (Venta.total), no contra la suma
+        # de los items: el descuento y el recargo de la venta son plata que no
+        # entró o que entró de más. Medirlo sobre los subtotales infla el margen
+        # de todo comercio que hace descuentos. Misma cuenta que Contabilidad.
+        margen_pct = _margen_pct(ingresos, cmv(ventas))
 
         egresos = egresos_en_rango(
             comercio,
@@ -537,9 +549,11 @@ class PanelView(APIView):
         ingresos = agg["ingresos"] or Decimal("0")
         cantidad = agg["cantidad"] or 0
 
-        items = items_con_costo(VentaItem.objects.filter(venta__in=ventas))
-        item_agg = items.aggregate(subtotal=Sum("subtotal"), costo=Sum("item_costo"))
-        margen_pct = _margen_pct(item_agg["subtotal"] or Decimal("0"), item_agg["costo"] or Decimal("0"))
+        # El margen va contra lo que se cobró (Venta.total), no contra la suma
+        # de los items: el descuento y el recargo de la venta son plata que no
+        # entró o que entró de más. Medirlo sobre los subtotales infla el margen
+        # de todo comercio que hace descuentos. Misma cuenta que Contabilidad.
+        margen_pct = _margen_pct(ingresos, cmv(ventas))
 
         egresos = egresos_en_rango(comercio, desde, hasta)
 

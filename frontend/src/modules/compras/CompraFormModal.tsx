@@ -362,7 +362,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
                         <div className="mt-1 flex gap-1 rounded-lg bg-surface-2 p-0.5">
                           <button
                             type="button" onClick={() => cambiarUnidadDeCarga(i, true)}
-                            className={`flex-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+                            className={`flex-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
                               row.enEnvase ? 'bg-accent/15 text-accent' : 'text-text-dim hover:text-text'
                             }`}
                           >
@@ -370,7 +370,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
                           </button>
                           <button
                             type="button" onClick={() => cambiarUnidadDeCarga(i, false)}
-                            className={`flex-1 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+                            className={`flex-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
                               !row.enEnvase ? 'bg-accent/15 text-accent' : 'text-text-dim hover:text-text'
                             }`}
                           >
@@ -402,7 +402,7 @@ export function CompraFormModal({ onClose }: { onClose: () => void }) {
 
                   <button
                     type="button" onClick={() => removeRow(i)} disabled={items.length === 1}
-                    className="mt-1.5 rounded p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                    className="mt-1.5 rounded-md p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
                     aria-label="Quitar fila"
                   >
                     <Trash2 size={15} />

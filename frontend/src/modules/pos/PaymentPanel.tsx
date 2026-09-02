@@ -226,7 +226,7 @@ export function PaymentPanel({
                 type="button"
                 onClick={() => setPagos((prev) => prev.filter((_, idx) => idx !== i))}
                 disabled={pagos.length === 1}
-                className="rounded p-1 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                className="rounded-md p-1 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
                 aria-label="Quitar medio de pago"
               >
                 <X size={14} />

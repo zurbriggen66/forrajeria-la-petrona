@@ -90,7 +90,7 @@ export function ProductoPicker({ producto, onSelect, placeholder = 'Buscar por n
         <span className="truncate text-text">{producto.nombre}</span>
         <button
           type="button" onClick={() => onSelect(null)}
-          className="shrink-0 rounded p-0.5 text-text-dim hover:text-danger" aria-label="Quitar producto"
+          className="shrink-0 rounded-md p-0.5 text-text-dim hover:text-danger" aria-label="Quitar producto"
         >
           <X size={14} />
         </button>

@@ -318,7 +318,7 @@ export function Aumentos() {
                       <button
                         type="button"
                         onClick={() => { cambiarValorIndividual(producto, ''); alternarValorPropio(producto.id) }}
-                        className="rounded p-1 text-text-dim hover:text-danger"
+                        className="rounded-md p-1 text-text-dim hover:text-danger"
                         aria-label="Volver al valor general"
                       >
                         <X size={12} />

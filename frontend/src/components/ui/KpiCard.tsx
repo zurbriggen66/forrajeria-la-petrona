@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
+import { Privado } from './Privado'
 
 interface KpiCardProps {
   label: string
@@ -28,14 +29,16 @@ export function KpiCard({ label, value, subtitle, trend, icon: Icon, accent = 'a
           </span>
         )}
       </div>
-      <div className="relative mt-2 font-display text-2xl font-semibold tabular-nums text-text">{value}</div>
+      <div className="relative mt-2 font-display text-2xl font-semibold tabular-nums text-text">
+        <Privado>{value}</Privado>
+      </div>
       {(subtitle || trend) && (
         <div className="relative mt-1 flex items-center gap-2 text-xs text-text-dim">
-          {subtitle && <span>{subtitle}</span>}
+          {subtitle && <span><Privado>{subtitle}</Privado></span>}
           {trend && (
             <span className={trend.positive ? 'text-accent-2' : 'text-danger'}>
               {trend.positive ? '+' : ''}
-              {trend.value}
+              <Privado>{trend.value}</Privado>
             </span>
           )}
         </div>

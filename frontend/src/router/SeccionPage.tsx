@@ -1,7 +1,9 @@
 import { useLocation } from 'react-router-dom'
+import { PantallaOculta } from '../components/ui/Privado'
+import { usePrivacidad } from '../context/PrivacidadContext'
 import { SeccionTabs } from '../components/ui/SeccionTabs'
 import { ModulePlaceholder } from '../modules/ModulePlaceholder'
-import { MODULOS_IMPLEMENTADOS } from './modulos'
+import { MODULOS_IMPLEMENTADOS, RUTAS_SOLO_NUMEROS } from './modulos'
 import { NAV_ITEMS } from './navigation'
 
 /** Una sección de la barra que agrupa varias pantallas: las muestra como
@@ -13,6 +15,7 @@ import { NAV_ITEMS } from './navigation'
  */
 export function SeccionPage() {
   const { pathname } = useLocation()
+  const { oculto } = usePrivacidad()
 
   const item = NAV_ITEMS.find(
     (i) => i.children?.length && (i.path === pathname || pathname.startsWith(i.path + '/')),
@@ -24,10 +27,16 @@ export function SeccionPage() {
   const activo = item.children.find((c) => c.path === pathname) ?? item.children[0]
   const Modulo = MODULOS_IMPLEMENTADOS[activo.path]
 
+  // Modo privado: se tapa la pestaña, no la sección — las pestañas quedan
+  // para poder seguir navegando. Ver RUTAS_SOLO_NUMEROS.
+  const tapada = oculto && RUTAS_SOLO_NUMEROS.has(activo.path)
+
   return (
     <div className="flex flex-col gap-5">
       <SeccionTabs items={item.children} activo={activo.path} />
-      {Modulo ? <Modulo /> : <ModulePlaceholder nombre={activo.label} />}
+      {tapada
+        ? <PantallaOculta />
+        : Modulo ? <Modulo /> : <ModulePlaceholder nombre={activo.label} />}
     </div>
   )
 }

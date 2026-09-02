@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Loader2, Package, Plus, Trash2, Truck, UserRound } from 'lucide-react'
+import { Loader2, Package, Plus, Trash2, Truck, UserPlus, UserRound } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { MontoOPorcentaje } from '../../components/ui/MontoOPorcentaje'
@@ -10,6 +10,7 @@ import { extraerMensajeError } from '../../lib/errors'
 import { formatMoney, parseDecimal, redondearCantidad } from '../../lib/format'
 import { useCuentasPago } from '../caja/api'
 import { useClientesSearch } from '../pos/api'
+import { ClienteFormModal } from '../clientes/ClienteFormModal'
 import { CUENTA_CORRIENTE } from '../pos/PaymentPanel'
 import { precioProducto } from '../pos/precio'
 import { ProductoPicker } from '../productos/ProductoPicker'
@@ -97,6 +98,7 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
   const [costoEnvio, setCostoEnvio] = useState(reparto?.costo_envio ?? '0')
   const [descuento, setDescuento] = useState(reparto?.descuento ?? '0')
   const [notas, setNotas] = useState(reparto?.notas ?? '')
+  const [creandoCliente, setCreandoCliente] = useState(false)
   // Un solo campo para las dos cosas, igual que en el POS: el valor es el id de
   // una cuenta, o el centinela de cuenta corriente, o vacío (todavía no se sabe).
   const [formaCobro, setFormaCobro] = useState(
@@ -142,6 +144,11 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
 
     if (itemsInput.length === 0) {
       toast('Agregá al menos un producto al reparto', 'error')
+      return
+    }
+    // El servidor lo exige igual; acá se avisa antes de mandar y con el motivo.
+    if (!clienteId) {
+      toast('Elegí el cliente de la lista, o crealo con el botón de al lado.', 'error')
       return
     }
 
@@ -190,7 +197,19 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
                 <UserRound size={12} /> Cliente registrado — el reparto queda en su ficha
               </span>
             ) : (
-              clientesEncontrados && clientesEncontrados.length > 0 && (
+              <>
+              {/* Sin ficha no se puede fiar, ni ver el historial del cliente,
+                  ni avisarle: por eso es obligatorio y hay atajo para crearlo. */}
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-warning">
+                Elegilo de la lista
+                <button
+                  type="button" onClick={() => setCreandoCliente(true)}
+                  className="inline-flex items-center gap-1 text-accent hover:underline"
+                >
+                  <UserPlus size={12} /> o creá el cliente
+                </button>
+              </span>
+              {clientesEncontrados && clientesEncontrados.length > 0 && (
                 <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
                   {clientesEncontrados.map((c) => (
                     <button
@@ -206,7 +225,8 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
                     </button>
                   ))}
                 </div>
-              )
+              )}
+              </>
             )}
           </div>
           <Input
@@ -308,7 +328,7 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
                     <button
                       type="button" onClick={() => setItems((p) => (p.length === 1 ? p : p.filter((_, idx) => idx !== i)))}
                       disabled={items.length === 1}
-                      className="rounded p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                      className="rounded-md p-2 text-text-dim hover:bg-danger/10 hover:text-danger disabled:opacity-30"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -385,6 +405,21 @@ export function RepartoFormModal({ reparto, onClose }: { reparto?: Reparto; onCl
           </Button>
         </div>
       </form>
+
+      {creandoCliente && (
+        <ClienteFormModal
+          cliente={null}
+          onClose={() => setCreandoCliente(false)}
+          onCreated={(creado) => {
+            // Queda elegido de una: el que está cargando el reparto no tiene
+            // que salir a buscarlo de nuevo en el buscador.
+            setClienteId(creado.id)
+            setClienteNombre(creado.nombre)
+            if (!telefono) setTelefono(creado.celular || creado.telefono || '')
+            setCreandoCliente(false)
+          }}
+        />
+      )}
     </Modal>
   )
 }

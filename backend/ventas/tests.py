@@ -14,7 +14,7 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 
 from caja.models import CajaMovimiento, CajaSesion, CuentaPago
-from clientes.models import Cliente
+from clientes.models import Cliente, ClienteMovimiento
 from core.models import Comercio, UsuarioComercio
 from fiscal.afip import ErrorFiscal
 from fiscal.models import ComercioFiscalConfig, FiscalQueue
@@ -1302,3 +1302,87 @@ class VentaAGranelTests(APITestCase):
         """El front normaliza a punto (InputDecimal); si alguna vez se le
         escapara una coma, la venta se rechaza entera."""
         self.assertEqual(self._vender("0,5").status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class AnularVentaFiadaTests(APITestCase):
+    """Anular una venta fiada tiene que bajarle la deuda al cliente.
+
+    El reporte fue "anuló ventas de la cuenta corriente y no descontó el monto".
+    El backend sí lo hacía; lo que no se refrescaba era la pantalla (ver
+    CLAVES_AFECTADAS en frontend/src/modules/ventas/api.ts). Estos tests dejan
+    fijado que la plata se mueva, así la próxima vez se descarta de una.
+    """
+
+    def setUp(self):
+        self.comercio = Comercio.objects.create(nombre="Comercio (test)")
+        self.user = User.objects.create_user(username="cajero-fiado", password="testpass123")
+        UsuarioComercio.objects.create(user=self.user, comercio=self.comercio, rol="Dueño")
+        self.client.force_authenticate(user=self.user)
+        CajaSesion.objects.create(comercio=self.comercio, estado="abierta", monto_apertura=Decimal("0"))
+
+        self.producto = Producto.objects.create(
+            comercio=self.comercio, nombre="Balanceado", precio_venta=Decimal("1000.00"),
+            precio_costo=Decimal("600.0000"), stock=Decimal("50"),
+        )
+        self.cliente = Cliente.objects.create(comercio=self.comercio, nombre="Doña Rosa")
+
+    def _fiar(self, cantidad="5"):
+        return self.client.post("/api/ventas/", {
+            "sync_uuid": str(uuid.uuid4()),
+            "metodo_pago": "cuenta_corriente",
+            "cliente": str(self.cliente.id),
+            "monto_cuenta_corriente": str(Decimal("1000.00") * Decimal(cantidad)),
+            "items": [{"producto": str(self.producto.id), "cantidad": cantidad}],
+        }, format="json")
+
+    def _saldo(self):
+        self.cliente.refresh_from_db()
+        return self.cliente.saldo_actual
+
+    def test_fiar_sube_la_deuda_y_anular_la_baja(self):
+        venta = self._fiar("5")
+        self.assertEqual(venta.status_code, status.HTTP_201_CREATED, venta.data)
+        self.assertEqual(self._saldo(), Decimal("5000.00"))
+
+        response = self.client.post(
+            f"/api/ventas/{venta.data['id']}/anular/", {"motivo": "El cliente devolvió todo"}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._saldo(), Decimal("0.00"))
+
+    def test_anular_deja_el_movimiento_de_reversa_en_la_cuenta(self):
+        """Para que en la ficha del cliente se vea POR QUÉ bajó el saldo."""
+        venta = self._fiar("3")
+        self.client.post(f"/api/ventas/{venta.data['id']}/anular/", {"motivo": "error de carga"}, format="json")
+        reversa = ClienteMovimiento.objects.filter(cliente=self.cliente, tipo="ajuste").latest("created_at")
+        self.assertEqual(reversa.monto, Decimal("-3000.00"))
+        self.assertIn("Anulación venta", reversa.referencia)
+
+    def test_anular_tambien_devuelve_el_stock(self):
+        venta = self._fiar("5")
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, Decimal("45.000"))
+        self.client.post(f"/api/ventas/{venta.data['id']}/anular/", {"motivo": "x"}, format="json")
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, Decimal("50.000"))
+
+    def test_corregir_los_items_mueve_la_deuda(self):
+        """Si se corrige lo que se llevó, la deuda tiene que seguir el total."""
+        venta = self._fiar("5")
+        self.assertEqual(self._saldo(), Decimal("5000.00"))
+        response = self.client.post(
+            f"/api/ventas/{venta.data['id']}/editar_items/",
+            {"items": [{"producto": str(self.producto.id), "cantidad": "2"}]}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._saldo(), Decimal("2000.00"))
+
+    def test_no_se_puede_anular_dos_veces(self):
+        """Sin esta guarda, el segundo intento le restaría la deuda de nuevo y
+        el cliente quedaría con saldo a favor de la nada."""
+        venta = self._fiar("5")
+        url = f"/api/ventas/{venta.data['id']}/anular/"
+        self.client.post(url, {"motivo": "x"}, format="json")
+        segunda = self.client.post(url, {"motivo": "x"}, format="json")
+        self.assertEqual(segunda.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._saldo(), Decimal("0.00"))

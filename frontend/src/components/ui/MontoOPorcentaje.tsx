@@ -49,7 +49,7 @@ export function MontoOPorcentaje({ id, label, base, value, onChange }: Props) {
           {(['monto', 'pct'] as const).map((m) => (
             <button
               key={m} type="button" onClick={() => setModo(m)}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
                 modo === m ? 'bg-accent/20 text-accent' : 'text-text-dim hover:text-text'
               }`}
             >

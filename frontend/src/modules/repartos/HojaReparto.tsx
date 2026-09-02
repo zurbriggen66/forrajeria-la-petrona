@@ -33,9 +33,20 @@ function bultos(item: RepartoItem) {
  * la calle, muchas veces desde el asiento y con poca luz. */
 function BloqueReparto({ reparto }: { reparto: Reparto }) {
   const aCobrar = Number(reparto.total)
+  // Cobrado por adelantado: la venta ya existe y el pedido todavía no salió.
+  const yaPago = Boolean(reparto.venta)
+  const noCobrar = yaPago || reparto.a_cuenta_corriente
 
   return (
     <section className="no-cortar" style={{ marginBottom: '6mm' }}>
+      {/* Arriba de todo y en caja, no al costado: el repartidor mira el papel
+          apurado y en la calle. `hoja-aviso` es la misma caja que usa el
+          remito de una venta anulada. */}
+      {noCobrar && (
+        <p className="hoja-aviso">
+          {yaPago ? 'PEDIDO YA PAGADO — NO COBRAR' : 'VA A CUENTA CORRIENTE — NO COBRAR'}
+        </p>
+      )}
       <div className="hoja-bloque">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10mm' }}>
           <div style={{ flex: 1 }}>
@@ -48,12 +59,15 @@ function BloqueReparto({ reparto }: { reparto: Reparto }) {
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
-            {/* En cuenta corriente el repartidor NO cobra: si el papel dice "A
-                cobrar $21.700" igual que en los demás, cobra de más y el cliente
-                termina pagando dos veces la misma mercadería. */}
-            <p className="hoja-etiqueta">{reparto.a_cuenta_corriente ? 'No cobrar' : 'A cobrar'}</p>
+            {/* Si el papel dice "A cobrar $21.700" en un pedido que ya se pagó
+                —o que va a cuenta corriente—, el repartidor cobra de más y el
+                cliente termina pagando dos veces la misma mercadería. Por eso
+                los tres casos se leen distinto. */}
+            <p className="hoja-etiqueta">{noCobrar ? 'No cobrar' : 'A cobrar'}</p>
             <p className="hoja-valor-grande">{formatMoney(aCobrar)}</p>
-            {reparto.a_cuenta_corriente ? (
+            {yaPago ? (
+              <p className="hoja-valor" style={{ marginTop: '1mm' }}>YA PAGÓ</p>
+            ) : reparto.a_cuenta_corriente ? (
               <p className="hoja-valor" style={{ marginTop: '1mm' }}>VA A CUENTA CORRIENTE</p>
             ) : reparto.cuenta_pago_nombre && (
               <p className="hoja-valor" style={{ marginTop: '1mm' }}>{reparto.cuenta_pago_nombre}</p>

@@ -80,10 +80,10 @@ export function ProductosListado() {
       className: 'text-right',
       render: (p) => (
         <div className="flex items-center justify-end gap-1">
-          <button onClick={() => setModal(p)} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar ${p.nombre}`}>
+          <button onClick={() => setModal(p)} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar ${p.nombre}`}>
             <Pencil size={15} />
           </button>
-          <button onClick={() => setAEliminar(p)} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar ${p.nombre}`}>
+          <button onClick={() => setAEliminar(p)} className="rounded-md p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar ${p.nombre}`}>
             <Trash2 size={15} />
           </button>
         </div>

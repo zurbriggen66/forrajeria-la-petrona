@@ -21,7 +21,7 @@ function QrFiscal({ url }: { url: string }) {
   useEffect(() => {
     if (canvasRef.current) QRCode.toCanvas(canvasRef.current, url, { width: 120, margin: 0 })
   }, [url])
-  return <canvas ref={canvasRef} className="rounded bg-white p-1" />
+  return <canvas ref={canvasRef} className="rounded-md bg-white p-1" />
 }
 
 export function TicketModal({ data, onNuevaVenta }: { data: TicketData; onNuevaVenta: () => void }) {

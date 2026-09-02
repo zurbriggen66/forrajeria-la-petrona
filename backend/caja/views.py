@@ -59,6 +59,22 @@ def resolver_cuenta_efectivo(comercio):
     return cuenta
 
 
+def resolver_cuenta_por_tipo(comercio, tipo):
+    """La cuenta de pago del comercio para un tipo (efectivo, transferencia,
+    tarjeta). Si el comercio no cargó una de ese tipo, cae en Efectivo: mejor
+    que la plata entre a la caja en el contenedor equivocado a que no entre.
+    """
+    if tipo:
+        cuenta = (
+            CuentaPago.objects.filter(comercio=comercio, tipo=tipo, activo=True)
+            .order_by("created_at")
+            .first()
+        )
+        if cuenta is not None:
+            return cuenta
+    return resolver_cuenta_efectivo(comercio)
+
+
 def calcular_contenedores(comercio, sesion, cuenta_efectivo=None):
     """Saldo por contenedor (cuenta de pago) acumulado durante la sesión actual.
     El monto de apertura se asigna íntegro al contenedor Efectivo: la caja se

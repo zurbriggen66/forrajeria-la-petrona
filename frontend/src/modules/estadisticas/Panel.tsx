@@ -93,6 +93,7 @@ export function Panel() {
         <MetricCard
           label="Ingresos" value={formatMoney(kpis.ingresos)} icon={TrendingUp}
           variacion={kpis.var_ingresos_pct} tono="positivo"
+          hint="Todo lo vendido, incluso lo fiado"
         />
         <MetricCard
           label="Cantidad de ventas" value={String(kpis.cantidad_ventas)} icon={ShoppingCart}
@@ -110,9 +111,11 @@ export function Panel() {
         <MetricCard
           label="Balance" value={formatMoney(kpis.balance)} icon={Wallet}
           variacion={kpis.var_balance_pct} tono="positivo"
+          hint="Ingresos − egresos. No es la plata en caja"
         />
         <MetricCard
           label="Margen sobre lo vendido" value={formatPct(kpis.margen_pct)} icon={Percent}
+          hint="Sobre lo cobrado, ya con descuentos y recargos"
         />
       </div>
 

@@ -90,14 +90,14 @@ export function Combos() {
         <span className="flex justify-end gap-1">
           <button
             onClick={() => setEditando(c)}
-            className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
+            className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-text"
             aria-label={`Editar ${c.nombre}`}
           >
             <Pencil size={15} />
           </button>
           <button
             onClick={() => setABorrar(c)}
-            className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger"
+            className="rounded-md p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger"
             aria-label={`Eliminar ${c.nombre}`}
           >
             <Trash2 size={15} />

@@ -122,13 +122,13 @@ function TarjetaPresupuesto({
           </Button>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={onImprimir} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir presupuesto de ${presupuesto.cliente_nombre}`}>
+          <button onClick={onImprimir} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Imprimir presupuesto de ${presupuesto.cliente_nombre}`}>
             <Printer size={14} />
           </button>
-          <button onClick={onEditar} className="rounded p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar presupuesto de ${presupuesto.cliente_nombre}`}>
+          <button onClick={onEditar} className="rounded-md p-1.5 text-text-dim hover:bg-surface-2 hover:text-accent" aria-label={`Editar presupuesto de ${presupuesto.cliente_nombre}`}>
             <Pencil size={14} />
           </button>
-          <button onClick={onEliminar} className="rounded p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar presupuesto de ${presupuesto.cliente_nombre}`}>
+          <button onClick={onEliminar} className="rounded-md p-1.5 text-text-dim hover:bg-danger/10 hover:text-danger" aria-label={`Eliminar presupuesto de ${presupuesto.cliente_nombre}`}>
             <Trash2 size={14} />
           </button>
         </div>

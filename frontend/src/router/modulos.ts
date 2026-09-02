@@ -74,3 +74,24 @@ export const MODULOS_IMPLEMENTADOS: Record<string, ComponentType> = {
   '/etiquetas': Etiquetas,
   '/config': Config,
 }
+
+/** Pantallas que no son otra cosa que los números del negocio.
+ *
+ * Con el modo privado activo se tapan enteras (ver PantallaOculta). Las que no
+ * están en esta lista —Caja, Repartos, Compras, Clientes— siguen andando: ahí
+ * sólo se tapa la plata de las tarjetas, porque el dueño necesita seguir
+ * trabajando con un cliente adelante.
+ *
+ * Inicio entra: es un tablero. Lo operativo que tiene (repartos de hoy, stock
+ * bajo) está también en su propia pantalla, que no se tapa. */
+export const RUTAS_SOLO_NUMEROS = new Set([
+  '/home',
+  '/estadisticas/panel',
+  '/estadisticas/rankings',
+  '/estadisticas/rentabilidad',
+  '/verdad-del-negocio',
+  '/contabilidad/resultado',
+  '/contabilidad/mes-a-mes',
+  '/contabilidad/deudas',
+  '/inventario/ranking',
+])

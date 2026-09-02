@@ -6,6 +6,8 @@ import type {
   ClienteInput,
   ClienteMovimiento,
   ClienteMovimientoInput,
+  EstadisticasClientes,
+  MovimientoAuditoria,
   Paginated,
 } from './types'
 
@@ -87,6 +89,11 @@ export function useCrearMovimientoCliente(clienteId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cliente-movimientos', clienteId] })
       queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+      // El pago entra (o sale) del cajón: sin esto el arqueo en pantalla
+      // quedaba con el número viejo hasta recargar.
+      queryClient.invalidateQueries({ queryKey: ['caja-actual'] })
+      queryClient.invalidateQueries({ queryKey: ['caja-movimientos'] })
+      queryClient.invalidateQueries({ queryKey: ['cuenta-corriente-auditoria'] })
     },
   })
 }
@@ -94,13 +101,23 @@ export function useCrearMovimientoCliente(clienteId: string) {
 export function useEditarMovimientoCliente(clienteId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, input }: { id: string; input: { monto: string; referencia?: string; medio_pago?: string } }) => {
+    // `motivo` es obligatorio del lado del servidor: esto le cambia el saldo a
+    // un cliente y queda registrado quién y por qué.
+    mutationFn: async ({ id, input }: {
+      id: string
+      input: { monto: string; referencia?: string; medio_pago?: string; motivo: string }
+    }) => {
       const { data } = await api.patch<ClienteMovimiento>(`/clientes/${clienteId}/movimientos/${id}/`, input)
       return data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cliente-movimientos', clienteId] })
       queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+      // El pago entra (o sale) del cajón: sin esto el arqueo en pantalla
+      // quedaba con el número viejo hasta recargar.
+      queryClient.invalidateQueries({ queryKey: ['caja-actual'] })
+      queryClient.invalidateQueries({ queryKey: ['caja-movimientos'] })
+      queryClient.invalidateQueries({ queryKey: ['cuenta-corriente-auditoria'] })
     },
   })
 }
@@ -108,12 +125,19 @@ export function useEditarMovimientoCliente(clienteId: string) {
 export function useEliminarMovimientoCliente(clienteId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/clientes/${clienteId}/movimientos/${id}/`)
+    mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
+      // DELETE con cuerpo: es lo que espera el backend para el motivo, y axios
+      // lo manda sólo si va en `data`.
+      await api.delete(`/clientes/${clienteId}/movimientos/${id}/`, { data: { motivo } })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cliente-movimientos', clienteId] })
       queryClient.invalidateQueries({ queryKey: ['clientes-listado'] })
+      // El pago entra (o sale) del cajón: sin esto el arqueo en pantalla
+      // quedaba con el número viejo hasta recargar.
+      queryClient.invalidateQueries({ queryKey: ['caja-actual'] })
+      queryClient.invalidateQueries({ queryKey: ['caja-movimientos'] })
+      queryClient.invalidateQueries({ queryKey: ['cuenta-corriente-auditoria'] })
     },
   })
 }
@@ -152,5 +176,40 @@ export function useDesactivarAsignacion(clienteId: string) {
       return data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cliente-asignaciones', clienteId] }),
+  })
+}
+
+/** El registro de ediciones y borrados de cuentas corrientes.
+ *
+ * Sin `desde` el backend devuelve la última semana, que es la ventana con la
+ * que se trabaja. Nada se borra solo: lo viejo se archiva con el comando
+ * clientes_auditoria_archivar. */
+export function useAuditoriaCuentaCorriente(clienteId?: string, desde?: string) {
+  return useQuery({
+    queryKey: ['cuenta-corriente-auditoria', clienteId ?? 'todos', desde ?? 'semana'],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<MovimientoAuditoria>>('/clientes/auditoria/', {
+        params: { page_size: 100, cliente: clienteId, desde },
+      })
+      return data.results
+    },
+  })
+}
+
+/** Los números de la cartera de clientes.
+ *
+ * `staleTime` de 2 minutos: son agregados de todo el historial, no cambian con
+ * cada venta, y recalcularlos en cada foco de la pestaña es trabajo al servidor
+ * por nada. */
+export function useEstadisticasClientes(diasDormido?: number) {
+  return useQuery({
+    queryKey: ['clientes-estadisticas', diasDormido ?? 60],
+    queryFn: async () => {
+      const { data } = await api.get<EstadisticasClientes>('/clientes/estadisticas/', {
+        params: { dias_dormido: diasDormido },
+      })
+      return data
+    },
+    staleTime: 2 * 60 * 1000,
   })
 }

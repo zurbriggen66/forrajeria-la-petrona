@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Loader2, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
+import { FileText, History, Loader2, MessageCircle, Pencil, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { KpiCard } from '../../components/ui/KpiCard'
@@ -25,6 +25,9 @@ import {
 } from './api'
 import { ClienteFormModal } from './ClienteFormModal'
 import { ClienteMovimientoFormModal } from './ClienteMovimientoFormModal'
+import { RegistroCambios } from './RegistroCambios'
+import { linkWhatsapp } from '../../lib/whatsapp'
+import { useAuth } from '../../context/AuthContext'
 import type { Cliente, ClienteMovimiento } from './types'
 
 function formatFecha(iso: string) {
@@ -47,6 +50,60 @@ const LABEL_MEDIO_PAGO: Record<string, string> = {
   efectivo: 'Efectivo',
   transferencia: 'Transferencia',
   tarjeta: 'Tarjeta',
+}
+
+/** Abre WhatsApp con un mensaje ya escrito sobre ESTA venta.
+ *
+ * No manda nada solo: el envío automático del backend depende del bot, que casi
+ * siempre está apagado. Esto le deja el mensaje armado al dueño para que lo
+ * mande —o lo edite— cuando quiere. Es el caso real de reclamar un fiado.
+ *
+ * Se apaga si el cliente no tiene celular cargado: mejor un botón gris que uno
+ * que abre una pestaña a la nada. */
+function BotonWhatsapp({ cliente, venta }: { cliente: Cliente; venta: Venta }) {
+  const { comercio } = useAuth()
+  const fiado = Number(venta.monto_cuenta_corriente) > 0
+
+  // formatMoney y no toLocaleString a mano: el mensaje que ve el cliente tiene
+  // que mostrar la plata igual que la pantalla.
+  const lineas = [
+    `Hola ${cliente.nombre}, te escribo de ${comercio?.nombre ?? 'el local'}.`,
+    '',
+    `Compra del ${formatFecha(venta.created_at)}${venta.numero_ticket ? ` (ticket #${venta.numero_ticket})` : ''}`,
+    `Total: ${formatMoney(venta.total)}`,
+    fiado ? `Quedó en cuenta: ${formatMoney(venta.monto_cuenta_corriente)}` : '',
+    '',
+    `Tu saldo actual es de ${formatMoney(cliente.saldo_actual)}.`,
+  ]
+  const mensaje = lineas.filter((l, i) => l !== '' || i > 0).join(String.fromCharCode(10))
+
+  const href = linkWhatsapp(cliente.celular || cliente.telefono, mensaje)
+
+  if (!href) {
+    return (
+      <span
+        title="Este cliente no tiene celular cargado en su ficha"
+        className="inline-flex cursor-not-allowed rounded-md p-1.5 text-text-dim opacity-40"
+      >
+        <MessageCircle size={15} />
+      </span>
+    )
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      // stopPropagation: la fila abre el detalle de la venta al clickearla, y
+      // el botón no tiene que disparar las dos cosas.
+      onClick={(e) => e.stopPropagation()}
+      title={`Escribirle por WhatsApp sobre esta compra${fiado ? ' (quedó fiada)' : ''}`}
+      className="inline-flex rounded-md p-1.5 text-text-dim transition-colors hover:bg-accent-2/10 hover:text-accent-2"
+    >
+      <MessageCircle size={15} />
+    </a>
+  )
 }
 
 function AsignacionVendedor({ cliente }: { cliente: Cliente }) {
@@ -136,9 +193,9 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
     }
   }
 
-  async function handleEliminar(m: ClienteMovimiento) {
+  async function handleEliminar(m: ClienteMovimiento, motivo: string) {
     try {
-      await eliminarMovimiento.mutateAsync(m.id)
+      await eliminarMovimiento.mutateAsync({ id: m.id, motivo })
       toast('Movimiento borrado')
     } catch (err) {
       toast(extraerMensajeError(err, 'No se pudo borrar el movimiento'), 'error')
@@ -152,9 +209,23 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
     { header: 'Tipo', render: (m) => <span className={COLOR_TIPO_MOVIMIENTO[m.tipo] ?? ''}>{LABEL_TIPO_MOVIMIENTO[m.tipo] ?? m.tipo}</span> },
     {
       header: 'Motivo',
-      render: (m) => m.tipo === 'pago'
-        ? [LABEL_MEDIO_PAGO[m.medio_pago] ?? null, m.referencia].filter(Boolean).join(' · ') || '—'
-        : m.referencia || '—',
+      render: (m) => (
+        <span className="flex items-center gap-1.5">
+          {m.tipo === 'pago'
+            ? [LABEL_MEDIO_PAGO[m.medio_pago] ?? null, m.referencia].filter(Boolean).join(' · ') || '—'
+            : m.referencia || '—'}
+          {/* Un pago que no entró a ninguna caja es plata cobrada que el arqueo
+              del turno no vio. Se avisa acá, que es donde se mira. */}
+          {m.tipo === 'pago' && !m.caja_sesion && (
+            <span
+              title="Se cobró sin caja abierta: no está en el arqueo de ningún turno"
+              className="rounded-full border border-warning/40 bg-warning/10 px-1.5 text-[10px] font-medium text-warning"
+            >
+              fuera de caja
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       header: 'Monto', className: 'tabular-nums text-right',
@@ -191,6 +262,11 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
     {
       header: 'Estado',
       render: (v) => (v.anulada ? <span className="text-danger">Anulada</span> : <span className="text-accent-2">Activa</span>),
+    },
+    {
+      header: '',
+      className: 'text-right',
+      render: (v) => <BotonWhatsapp cliente={cliente} venta={v} />,
     },
   ]
 
@@ -249,6 +325,15 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
           ) : (
             <Table columns={columnasMovimientos} rows={movimientos ?? []} rowKey={(m) => m.id} emptyMessage="Sin movimientos todavía." />
           )}
+        </div>
+
+        {/* Va pegado a los movimientos y no en otra pantalla: cuando el cliente
+            discute un saldo, la pregunta y la respuesta tienen que estar juntas. */}
+        <div>
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-text">
+            <History size={15} className="text-accent" /> Registro de cambios
+          </h3>
+          <RegistroCambios clienteId={cliente.id} />
         </div>
 
         <AsignacionVendedor cliente={cliente} />
@@ -321,10 +406,14 @@ export function ClienteDetalleModal({ cliente, onClose }: { cliente: Cliente; on
       {movimientoAEliminar && (
         <ConfirmDialog
           titulo="Borrar movimiento"
-          descripcion="El saldo del cliente se recalcula solo al borrarlo. No se puede deshacer."
+          descripcion="El saldo del cliente se recalcula solo al borrarlo. No se puede deshacer, pero queda en el registro de cambios."
           confirmarTexto="Borrar" peligro
           cargando={eliminarMovimiento.isPending}
-          onConfirmar={() => handleEliminar(movimientoAEliminar)}
+          pedirMotivo={{
+            label: 'Por qué lo borrás',
+            placeholder: 'Ej: el pago era de otro cliente',
+          }}
+          onConfirmar={(motivo) => handleEliminar(movimientoAEliminar, motivo)}
           onCancelar={() => setMovimientoAEliminar(null)}
         />
       )}

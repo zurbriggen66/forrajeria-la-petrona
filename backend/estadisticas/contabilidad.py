@@ -30,21 +30,13 @@ from core.mixins import resolver_comercio_activo
 from finanzas.models import Gasto
 from ventas.models import VentaItem, VentaPago
 
-from .views import _margen_pct, _rango_por_defecto, items_con_costo, ventas_filtradas
-
-def _cmv(ventas):
-    """Costo de la mercadería vendida: lo que costó comprar lo que se vendió.
-
-    Sale de `VentaItem.costo_unitario`, que es el costo congelado al momento de
-    la venta — no el precio de costo actual del producto, que pudo cambiar."""
-    agg = items_con_costo(VentaItem.objects.filter(venta__in=ventas)).aggregate(t=Sum("item_costo"))
-    return agg["t"] or Decimal("0")
+from .views import _margen_pct, _rango_por_defecto, cmv, items_con_costo, ventas_filtradas
 
 
 def _resultado(comercio, ventas, desde, hasta):
     """Estado de resultados del período."""
     ingresos = ventas.aggregate(t=Sum("total"))["t"] or Decimal("0")
-    cmv = _cmv(ventas)
+    costo_vendido = cmv(ventas)
     gastos = Gasto.objects.filter(comercio=comercio, fecha__gte=desde, fecha__lte=hasta)
     por_tipo = gastos.aggregate(
         fijos=Sum("monto", filter=Q(tipo="fijo")),
@@ -52,12 +44,12 @@ def _resultado(comercio, ventas, desde, hasta):
     )
     fijos = por_tipo["fijos"] or Decimal("0")
     variables = por_tipo["variables"] or Decimal("0")
-    margen_bruto = ingresos - cmv
+    margen_bruto = ingresos - costo_vendido
     return {
         "ingresos": ingresos,
-        "cmv": cmv,
+        "cmv": costo_vendido,
         "margen_bruto": margen_bruto,
-        "margen_bruto_pct": _margen_pct(ingresos, cmv),
+        "margen_bruto_pct": _margen_pct(ingresos, costo_vendido),
         "gastos_fijos": fijos,
         "gastos_variables": variables,
         "gastos_totales": fijos + variables,
@@ -223,15 +215,15 @@ class MensualView(APIView):
         filas, cursor = [], desde
         while cursor <= primero_actual:
             ingresos = ingresos_mes.get(cursor) or Decimal("0")
-            cmv = cmv_mes.get(cursor) or Decimal("0")
+            costo = cmv_mes.get(cursor) or Decimal("0")
             gastos = gastos_mes.get(cursor) or Decimal("0")
             filas.append({
                 "mes": cursor,
                 "ingresos": ingresos,
-                "cmv": cmv,
-                "margen_bruto": ingresos - cmv,
+                "cmv": costo,
+                "margen_bruto": ingresos - costo,
                 "gastos": gastos,
-                "resultado": ingresos - cmv - gastos,
+                "resultado": ingresos - costo - gastos,
             })
             cursor = (cursor + timedelta(days=32)).replace(day=1)
 

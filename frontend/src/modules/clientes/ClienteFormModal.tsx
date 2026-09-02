@@ -15,7 +15,13 @@ const TIPOS = [
   { value: 'empresa', label: 'Empresa' },
 ]
 
-export function ClienteFormModal({ cliente, onClose }: { cliente: Cliente | null; onClose: () => void }) {
+export function ClienteFormModal({ cliente, onClose, onCreated }: {
+  cliente: Cliente | null
+  onClose: () => void
+  /** Para quien lo abre como atajo (ej. cargar un reparto): recibe el cliente
+   * recién creado y lo puede dejar elegido sin volver a buscarlo. */
+  onCreated?: (cliente: Cliente) => void
+}) {
   const { toast } = useToast()
   const createCliente = useCreateCliente()
   const updateCliente = useUpdateCliente()
@@ -42,7 +48,8 @@ export function ClienteFormModal({ cliente, onClose }: { cliente: Cliente | null
       if (cliente) {
         await updateCliente.mutateAsync({ id: cliente.id, input })
       } else {
-        await createCliente.mutateAsync(input)
+        const creado = await createCliente.mutateAsync(input)
+        onCreated?.(creado)
       }
       toast(cliente ? 'Cliente actualizado' : 'Cliente creado')
       onClose()

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Privado } from '../../components/ui/Privado'
 
 /** Tarjeta de KPI con badge de variación, al estilo del panel de referencia:
  * el número grande manda, el ícono y la tendencia acompañan sin competir. */
@@ -22,7 +23,9 @@ export function MetricCard({ label, value, hint, icon: Icon, variacion, tono = '
         {variacion !== undefined && <BadgeVariacion pct={variacion} tono={tono} />}
       </div>
       <p className="text-[11px] font-medium uppercase tracking-wide text-text-dim">{label}</p>
-      <p className="mt-1 font-display text-2xl font-bold tabular-nums text-text">{value}</p>
+      <p className="mt-1 font-display text-2xl font-bold tabular-nums text-text">
+        <Privado>{value}</Privado>
+      </p>
       {hint && <p className="mt-1 text-xs text-text-dim">{hint}</p>}
     </div>
   )
